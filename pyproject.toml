@@ -1,0 +1,31 @@
+[project]
+name = "battery-bridge"
+version = "0.1.0"
+description = "Home-Assistant-Integration für herstellerübergreifende Batteriespeicher-Entities"
+readme = "README.md"
+requires-python = ">=3.13"
+# Laufzeit-Abhängigkeiten der Integration selbst: keine über die Python-Standardbibliothek
+# hinaus (reines asyncio/UDP/JSON) — siehe manifest.json "requirements".
+dependencies = []
+
+[dependency-groups]
+# custom_components/battery_bridge/__init__.py importiert Home Assistant auf Modulebene
+# (wie jede HA-Integration) — jeder Test, der auch nur ein Blatt unter diesem Package
+# importiert, zieht das Package-__init__ und damit HA mit. Eine "leichte" Testebene ohne
+# HA ist bei einer HA-Integration deshalb kein sinnvolles Ziel: pytest-homeassistant-custom-
+# component gehört fest zu "dev", nicht in eine optionale Gruppe.
+dev = [
+    "pytest-homeassistant-custom-component",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -20,14 +20,20 @@ geprüft, nicht gegen die Absicht. Was hier „fertig" heißt, muss laufen.
 **Ziel:** SoC, Ist-Lade- und Ist-Entladeleistung eines Marstek-Speichers erscheinen als
 HA-Sensoren, sobald der Speicher im Config-Flow eingerichtet ist.
 
+**Status: in Arbeit.** Code steht und ist getestet (14 Tests, `pytest` + `ruff check .` grün),
+aber noch **nie gegen eine echte Venus E 3.0 gelaufen** — insbesondere die Vorzeichenkonvention
+von `bat_power` ist unverifiziert (siehe [bekannte-luecken.md](bekannte-luecken.md)). Erst nach
+diesem Praxistest gilt M1 als abgeschlossen (Plan Abschnitt 14, Schritt 4).
+
 | Punkt | Status | Verweis |
 |---|---|---|
-| Marstek Open-API-Doku vollständig lesen, exakte Read-Commands festhalten | offen | |
-| Repo-Grundgerüst (Abschnitt 3 in [plan.md](../plan.md)) | offen | |
-| `StorageAdapter`-Protocol + `models.py` | offen | |
-| `adapters/marstek_udp.py`: `connect()`/`read()`/`close()` | offen | |
-| `coordinator.py`, `config_flow.py` (mit Verbindungstest) | offen | |
-| `sensor.py` | offen | |
+| Marstek Open-API-Doku gelesen, Read-Commands festgehalten (`Bat.GetStatus`, `ES.GetStatus`) | fertig | [bekannte-luecken.md](bekannte-luecken.md) |
+| Repo-Grundgerüst (Abschnitt 3 in [plan.md](../plan.md)) | fertig | |
+| `StorageAdapter`-Protocol + `models.py` | fertig | |
+| `adapters/marstek_udp.py`: `connect()`/`read()`/`close()`, getestet | fertig | |
+| `coordinator.py`, `config_flow.py` (mit Verbindungstest), getestet | fertig | |
+| `sensor.py` | fertig | |
+| An echter Hardware bestätigen: Vorzeichenkonvention `bat_power`, Werte plausibel | offen | [bekannte-luecken.md](bekannte-luecken.md) |
 
 ### M2 — Schreibzugriff (Soll-Leistung)
 
@@ -35,7 +41,7 @@ HA-Sensoren, sobald der Speicher im Config-Flow eingerichtet ist.
 
 | Punkt | Status | Verweis |
 |---|---|---|
-| Klärung: direkter Leistungssollwert oder nur Betriebsmodus? (siehe [bekannte-luecken.md](bekannte-luecken.md)) | offen | |
+| Klärung: Passive-Mode-Sollwert oder Manual-Mode-Zeitfenster? (siehe [bekannte-luecken.md](bekannte-luecken.md)) | offen | |
 | `write_charge_power()`/`write_discharge_power()` im Adapter | offen | |
 | `number.py` | offen | |
 | Reaktionszeit an echter Hardware messen, Poll-Intervall justieren | offen | |

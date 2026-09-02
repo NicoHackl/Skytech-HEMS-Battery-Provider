@@ -1,0 +1,20 @@
+name: Tests und Linting
+
+on:
+  push:
+    branches: [main, agent/main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: uv installieren
+        uses: astral-sh/setup-uv@v3
+      - name: Abhängigkeiten installieren
+        run: uv sync
+      - name: Linting
+        run: uv run ruff check .
+      - name: Tests
+        run: uv run pytest

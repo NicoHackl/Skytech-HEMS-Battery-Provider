@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Batteriespeicher hinzufügen",
+        "description": "Hersteller des Speichers wählen.",
+        "data": {
+          "manufacturer": "Hersteller"
+        }
+      },
+      "marstek_udp": {
+        "title": "Marstek — Verbindung",
+        "description": "Verbindungsdaten des Speichers im lokalen Netzwerk.",
+        "data": {
+          "display_name": "Anzeigename (optional)",
+          "host": "IP-Adresse",
+          "port": "UDP-Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Der Speicher antwortet unter dieser Adresse nicht. IP-Adresse und Port prüfen."
+    },
+    "abort": {
+      "already_configured": "Dieser Speicher ist bereits eingerichtet."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "soc": {
+        "name": "Ladezustand"
+      },
+      "ist_ladeleistung": {
+        "name": "Ist-Ladeleistung"
+      },
+      "ist_entladeleistung": {
+        "name": "Ist-Entladeleistung"
+      }
+    }
+  }
+}

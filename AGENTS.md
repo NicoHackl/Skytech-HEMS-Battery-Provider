@@ -8,7 +8,7 @@
 
 Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marstek zuerst) einheitlich als normalisierte HA-Entitäten bereitstellt: Ist-SoC und Ist-Lade-/Entladeleistung lesen, Soll-Lade-/Entladeleistung schreiben. Brücke zwischen Herstelleranbindung und generischen Verbrauchern wie SkytechHEMS.
 
-Tech-Stack: Python 3.11, Home Assistant Custom Component, asyncio (UDP JSON-RPC für Marstek, aiohttp für künftige HTTP-Adapter), pytest, ruff
+Tech-Stack: Python 3.13+, Home Assistant Custom Component, asyncio (UDP JSON-RPC für Marstek, aiohttp für künftige HTTP-Adapter), pytest, ruff
 
 ## Präzedenz bei Widersprüchen
 
@@ -77,7 +77,7 @@ Wenn `docs/` dieser Datei widerspricht, ist `docs/` falsch und wird korrigiert �
 | Abhängigkeiten installieren | `uv sync` |
 | Tests | `pytest` |
 | Linting / Formatierung | `ruff check .` |
-| Build | `hassfest && hacs validate` |
+| Build | Kein lokaler Build-Schritt — Validierung läuft als CI (`.github/workflows/hassfest.yml`, `hacs.yml`), siehe [docs/git-workflow.md](docs/git-workflow.md) |
 
 Vor jedem Commit müssen Tests und Linting fehlerfrei durchlaufen.
 

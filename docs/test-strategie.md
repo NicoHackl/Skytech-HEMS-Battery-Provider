@@ -3,19 +3,25 @@
 ## Befehle
 
 ```bash
+uv sync             # zieht u. a. pytest-homeassistant-custom-component (den echten HA-Testkern)
 pytest              # alle Tests
 pytest <pfad>       # gezielt eine Datei
 ruff check .              # Linting und Formatprüfung
 ```
 
-Beides muss vor jedem Commit fehlerfrei durchlaufen — siehe [git-workflow.md](git-workflow.md).
+`pytest` und `ruff check .` müssen vor jedem Commit fehlerfrei durchlaufen — siehe
+[git-workflow.md](git-workflow.md). `uv sync` ist bei einer HA-Integration nicht optional leicht:
+`custom_components/battery_bridge/__init__.py` importiert Home Assistant auf Modulebene wie jede
+Integration — sobald ein Test auch nur ein Blatt unter `custom_components.battery_bridge.*`
+importiert, zieht das den kompletten HA-Core mit. `pytest-homeassistant-custom-component` gehört
+deshalb fest zu den Dev-Abhängigkeiten, keine optionale Gruppe.
 
 ## Testarten
 
 | Art | Umfang | Ort |
 |---|---|---|
-| Unit | Eine Funktion oder Klasse, keine externen Zugriffe | `tests/unit/` |
-| Integration | Zusammenspiel mehrerer Komponenten, echtes Schema | `tests/integration/` |
+| Adapter-Unit | Ein Adapter gegen einen gemockten Transport, keine echte Hardware/Netzwerk | `tests/adapters/` |
+| Integration (HA-Kern) | Setup/Unload eines Entry, Coordinator, Config-Flow — gegen den echten `hass`-Testkern | `tests/test_*.py` |
 | Regression | Ein konkret aufgetretener Bug, damit er nicht wiederkehrt | beim jeweiligen Modul |
 
 Die Teststruktur spiegelt die Struktur des Quellcodes. Zu
@@ -61,12 +67,16 @@ wertlos. Ungetestet bleiben dürfen generierte Dateien und triviale Getter.
 
 ## Fixtures
 
-Tests laufen ohne echte Marstek-Hardware. Ein UDP-Mock/Fixture ersetzt den Speicher: ein kleiner
-`asyncio`-UDP-Server (oder `unittest.mock.patch` auf Socket-Ebene) beantwortet die
-JSON-RPC-Requests aus `adapters/marstek_udp.py` mit vordefinierten Antworten — je eine Fixture für
-den Normalfall, für eine ungültige/fehlende Antwort und für einen Timeout. Sobald die exakten
-Marstek-Methodennamen/Payloads geklärt sind (siehe [bekannte-luecken.md](bekannte-luecken.md)),
-werden die Fixtures aus echten, einmalig mitgeschnittenen Antworten abgeleitet — nicht frei
-erfunden, damit sie dem echten Schema folgen.
+Tests laufen ohne echten Socket — auch nicht auf `127.0.0.1`: `pytest-homeassistant-custom-
+component` bringt `pytest-socket` mit und blockt jeden echten Socket standardmäßig, ein realer
+UDP-Mock-Server wäre also ohnehin gegen die eigene Testinfrastruktur gelaufen. Stattdessen wird
+`asyncio.get_running_loop().create_datagram_endpoint` selbst gemockt (siehe
+`tests/adapters/test_marstek_udp.py::_connected_adapter`): ein `_FakeTransport` beantwortet jedes
+`sendto()` synchron über eine Responder-Funktion, indem er die Antwort direkt in die
+Protocol-Queue des Adapters legt — deterministisch, ohne Port-Bindung, ohne Race. Für
+Coordinator- und Config-Flow-Tests wird stattdessen `MarstekUdpAdapter.connect()`/`read()` selbst
+per `unittest.mock.AsyncMock` gepatcht, das Protokoll spielt dort keine Rolle mehr.
 
-Generierte Fixtures werden nie von Hand bearbeitet — sonst weicht der Test vom echten Schema ab.
+Die Antwort-Payloads in den Fixtures stammen aus der bestätigten Marstek-Protokoll-Doku (siehe
+[bekannte-luecken.md](bekannte-luecken.md)), nicht frei erfunden — nur die Vorzeichenkonvention
+von `bat_power` ist dort als unverifiziert markiert und in beide Richtungen getestet.

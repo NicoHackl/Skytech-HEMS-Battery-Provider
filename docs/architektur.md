@@ -22,11 +22,11 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
 
 | Schicht | Technologie | Warum |
 |---|---|---|
-| Sprache / Laufzeit | Python 3.11, Home Assistant Custom Component, `asyncio` | Setzt sich aus dem HA-Integrations-Framework selbst voraus, keine eigene Wahl |
+| Sprache / Laufzeit | Python 3.13+, Home Assistant Custom Component, `asyncio` | Von aktuellem HA-Core/`pytest-homeassistant-custom-component` vorausgesetzt — Plan nannte 3.11, siehe [bekannte-luecken.md](bekannte-luecken.md) |
 | Transport (Marstek) | UDP JSON-RPC, Port 30000 | Offizielle lokale Open-API, geringerer Overhead als Modbus TCP, kein Firmware-Mindeststand nötig — siehe D-007 |
 | Persistenz | Keine eigene — HA-State/Config-Entries | Nicht-Ziel, siehe oben |
 | Schnittstelle | HA-Entities (`sensor`, `number`) je Speicher-Instanz | Einzige öffentliche Schnittstelle dieses Projekts, siehe [api-referenz.md](api-referenz.md) |
-| Tests | `pytest`, UDP-Mock/Fixture statt echter Hardware | Deterministisch, ohne Netzwerkzugriff — [test-strategie.md](test-strategie.md) |
+| Tests | `pytest` + `pytest-homeassistant-custom-component` | Deterministisch, ohne Netzwerkzugriff, gegen den echten HA-Testkern — Details: [test-strategie.md](test-strategie.md) |
 | Linting | `ruff check .` | Projektstandard, siehe [`AGENTS.md`](../AGENTS.md) |
 
 ## Komponenten
@@ -41,19 +41,23 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
                                        │                      ┌─────────────┐
                                        └─────────────────────►│  Platforms  │
                                                                │ sensor.py   │
-                                                               │ number.py   │
+                                                               │ number.py*  │
                                                                └──────┬──────┘
                                                                       │ Entities
                                                                       ▼
                                                      HA-Core (Dashboards, HEMS, Automationen)
 ```
 
+`* number.py` ist noch nicht gebaut — Schreibzugriff ist M2, siehe [roadmap.md](roadmap.md) und
+[bekannte-luecken.md](bekannte-luecken.md).
+
 | Komponente | Verantwortung | Darf nicht |
 |---|---|---|
 | `config_flow.py` | Hersteller/Protokoll wählen, Verbindungsdaten abfragen, Verbindungstest vor Anlage des Entry | Speicherzustand lesen/schreiben außerhalb des einmaligen Tests |
 | `adapters/*.py` (`StorageAdapter`) | Ein Protokoll/Hersteller sprechen: `connect()`/`read()`/`write_*()`/`close()` | Wissen, wie Coordinator oder Platforms mit den Daten umgehen |
 | `coordinator.py` | Adapter im Poll-Intervall abfragen, `StorageState` an Platforms verteilen, Fehler in `UpdateFailed`/`ConfigEntryNotReady` übersetzen | Herstellerspezifisches Protokoll kennen — nur über `StorageAdapter` |
-| `sensor.py` / `number.py` | `StorageState`-Felder als HA-Entities abbilden, Schreibaufrufe an den Adapter durchreichen | Eigene Poll- oder Verbindungslogik — das ist Aufgabe des Coordinators/Adapters |
+| `sensor.py` | `StorageState`-Felder als HA-Entities abbilden | Eigene Poll- oder Verbindungslogik — das ist Aufgabe des Coordinators/Adapters |
+| `number.py` (M2, noch nicht gebaut) | Soll-Werte entgegennehmen, Schreibaufrufe an den Adapter durchreichen | Eigene Poll- oder Verbindungslogik |
 
 Regel: Keine Komponente übernimmt Aufgaben einer anderen. Verschiebt sich eine Verantwortung,
 ist das eine Design-Entscheidung → [design-entscheidungen.md](design-entscheidungen.md).
@@ -61,14 +65,19 @@ ist das eine Design-Entscheidung → [design-entscheidungen.md](design-entscheid
 ## Datenfluss
 
 `config_flow.py` legt pro physischem Speicher einen `ConfigEntry` an (Hersteller, Protokoll,
-Verbindungsdaten). `__init__.py` erzeugt daraus einen `coordinator.py`, der im festen
-Poll-Intervall den zugehörigen `StorageAdapter.read()` aufruft und ein `StorageState` erhält
+Verbindungsdaten), nach einem erfolgreichen Verbindungstest (`adapter.connect()` + `read()`).
+`__init__.py` baut daraus den passenden Adapter, erzeugt einen `BatteryBridgeCoordinator`
+(`coordinator.py`) und ruft `async_config_entry_first_refresh()` — schlägt das fehl, kommt
+`ConfigEntryNotReady`, HA versucht den Start automatisch erneut. Danach fragt der Coordinator im
+festen Poll-Intervall `StorageAdapter.read()` ab und erhält ein `StorageState`
 (Schema: [datenmodell.md](datenmodell.md)). `sensor.py` liest den zuletzt bekannten Zustand vom
-Coordinator und bildet ihn als `sensor.*`-Entities ab. Schreibt ein Nutzer oder eine Automation
-einen Wert auf `number.*`, ruft `number.py` direkt `adapter.write_charge_power()` bzw.
-`write_discharge_power()` auf und meldet Erfolg/Fehler zurück — ohne Umweg über den Coordinator.
-Schlägt eine Abfrage nach Retries fehl, setzt der Coordinator die Entities `unavailable`
-(Details: [bekannte-luecken.md](bekannte-luecken.md), Abschnitt Reaktionszeit).
+Coordinator und bildet ihn als `sensor.*`-Entities ab. Schlägt eine Abfrage nach Retries fehl,
+wirft der Adapter `StorageAdapterError`, der Coordinator übersetzt das in `UpdateFailed` und die
+Entities werden `unavailable` — kein Crash, kein Reload nötig.
+
+Der Schreibpfad (`number.*` → `write_charge_power()`/`write_discharge_power()`, ohne Umweg über
+den Coordinator) ist noch nicht gebaut — beide Methoden existieren im Marstek-Adapter, werfen
+aktuell aber `NotImplementedError` (M2, siehe [bekannte-luecken.md](bekannte-luecken.md)).
 
 Details zur öffentlichen Schnittstelle (Entities, Adapter-Vertrag): [api-referenz.md](api-referenz.md).
 
@@ -76,23 +85,31 @@ Details zur öffentlichen Schnittstelle (Entities, Adapter-Vertrag): [api-refere
 
 ```text
 custom_components/battery_bridge/
-├── __init__.py          # Setup/Unload ConfigEntry, Coordinator anlegen
-├── manifest.json         # domain, name, codeowners, requirements, iot_class: local_polling
-├── config_flow.py         # Schritt 1: Hersteller wählen · Schritt 2: Verbindungsdaten je Hersteller
-├── const.py               # DOMAIN, Plattform-Konstanten, Default-Poll-Intervall
-├── coordinator.py          # DataUpdateCoordinator[StorageState] pro ConfigEntry
-├── models.py                # StorageState (Dataclass)
+├── __init__.py                # Setup/Unload ConfigEntry, Adapter+Coordinator anlegen, PLATFORMS
+├── manifest.json               # domain, name, codeowners, requirements, iot_class: local_polling
+├── config_flow.py               # Schritt 1: Hersteller wählen · Schritt 2: Verbindungsdaten je Hersteller
+├── const.py                     # DOMAIN, Config-Keys, Poll-Intervall, Hersteller-/Protokoll-IDs
+├── coordinator.py                # BatteryBridgeCoordinator(DataUpdateCoordinator[StorageState])
+├── models.py                      # StorageState (Dataclass)
 ├── adapters/
 │   ├── __init__.py
-│   ├── base.py               # StorageAdapter-Protocol
-│   └── marstek_udp.py         # Marstek Open API, UDP JSON-RPC Port 30000
-├── sensor.py                  # SoC-%, Ist-Ladeleistung-W, Ist-Entladeleistung-W
-├── number.py                   # Soll-Ladeleistung-W, Soll-Entladeleistung-W
-├── strings.json / translations/de.json   # Config-Flow-Texte
+│   ├── base.py                     # StorageAdapter-Protocol, StorageAdapterError
+│   └── marstek_udp.py               # Marstek Local API, UDP JSON-RPC Port 30000 — Lesezugriff
+├── sensor.py                        # SoC-%, Ist-Ladeleistung-W, Ist-Entladeleistung-W
+├── strings.json / translations/de.json   # Config-Flow- und Entity-Texte (identisch, siehe unten)
+└── (number.py — M2, noch nicht gebaut, siehe roadmap.md)
+
+tests/
+├── adapters/test_marstek_udp.py   # gegen gemockten Transport, kein echter Socket
+├── test_coordinator.py             # gegen den echten HA-Testkern (hass-Fixture)
+└── test_config_flow.py              # ebenso
+
+hacs.json, pyproject.toml            # HACS-Metadaten, uv-Projekt + Dev-Dependencies
 ```
 
-Vollständige Datei- und Testübersicht inklusive `tests/`: [plan.md](../plan.md) Abschnitt 3, bis
-diese Doku nach der ersten Implementierung den tatsächlichen Stand übernimmt.
+`strings.json` und `translations/de.json` sind bewusst identisch (nicht Englisch→Übersetzung):
+Regel 3 in [`AGENTS.md`](../AGENTS.md) verlangt deutsche UI-Texte ohne Ausnahme, `strings.json`
+ist außerdem der Fallback, wenn eine HA-Instanz nicht auf Deutsch steht.
 
 ## Invarianten
 
@@ -111,7 +128,10 @@ Zusagen, auf die sich der gesamte Code verlässt. Wer eine davon bricht, bricht 
 
 ```bash
 uv sync
-hassfest && hacs validate
+ruff check .
+pytest
 ```
 
-Konfiguration: [konfiguration.md](konfiguration.md).
+`hassfest` und die HACS-Validierung sind **keine lokal ausführbaren Befehle** — beide laufen als
+GitHub Actions (`.github/workflows/hassfest.yml`, `hacs.yml`), so wie HA-Integrationen sie
+standardmäßig prüfen (kein pip-Paket dafür). Konfiguration: [konfiguration.md](konfiguration.md).

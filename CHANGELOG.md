@@ -17,6 +17,13 @@ Datei angefasst wurde.
 - Projektdoku (`docs/`) mit der konkreten Architektur aus `plan.md` gefüllt: Komponenten,
   Verzeichnisstruktur, Entities, Adapter-Vertrag, offene Fragen vor der Marstek-Implementierung
 
+- Batteriespeicher lassen sich über **Einstellungen → Geräte & Dienste → Integration hinzufügen**
+  einrichten: Hersteller Marstek wählen, IP-Adresse und Port eingeben, Verbindung wird vor dem
+  Anlegen getestet
+- Drei Sensoren je eingerichtetem Speicher: Ladezustand, Ist-Ladeleistung, Ist-Entladeleistung —
+  aktualisieren sich automatisch alle 5 Sekunden, zeigen „nicht verfügbar", wenn der Speicher
+  gerade nicht antwortet
+
 ### Geändert
 
 - Frontend-Vorlage entfernt — diese Integration hat keine eigene Web-Oberfläche, Entities laufen
