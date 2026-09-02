@@ -7,46 +7,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_HOST, CONF_PORT, STATE_UNAVAILABLE
+from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.battery_bridge.adapters.base import StorageAdapterError
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
-from custom_components.battery_bridge.const import (
-    CONF_MANUFACTURER,
-    CONF_PROTOCOL,
-    DOMAIN,
-    MANUFACTURER_MARSTEK,
-    PROTOCOL_MARSTEK_UDP,
-)
 from custom_components.battery_bridge.models import StorageState
+from tests.conftest import entity_ids_by_key, make_marstek_entry
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
-
-
-def _make_entry() -> MockConfigEntry:
-    return MockConfigEntry(
-        domain=DOMAIN,
-        unique_id="127.0.0.1:30000",
-        title="Marstek 127.0.0.1",
-        data={
-            CONF_MANUFACTURER: MANUFACTURER_MARSTEK,
-            CONF_PROTOCOL: PROTOCOL_MARSTEK_UDP,
-            CONF_HOST: "127.0.0.1",
-            CONF_PORT: 30000,
-        },
-    )
-
-
-def _entity_ids_by_suffix(hass: HomeAssistant, entry: MockConfigEntry) -> dict[str, str]:
-    """Entity-IDs des Entry, keyed nach dem Unique-ID-Suffix (`_soc`, `_ist_ladeleistung`, …)."""
-    registry = er.async_get(hass)
-    return {
-        entry_.unique_id.rsplit("_", 1)[-1]: entry_.entity_id
-        for entry_ in er.async_entries_for_config_entry(registry, entry.entry_id)
-    }
 
 
 async def test_setup_entry_befuellt_sensoren_aus_storage_state(
@@ -64,7 +33,7 @@ async def test_setup_entry_befuellt_sensoren_aus_storage_state(
     monkeypatch.setattr(MarstekUdpAdapter, "read", AsyncMock(return_value=state))
     monkeypatch.setattr(MarstekUdpAdapter, "close", AsyncMock(return_value=None))
 
-    entry = _make_entry()
+    entry = make_marstek_entry()
     entry.add_to_hass(hass)
 
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -73,10 +42,10 @@ async def test_setup_entry_befuellt_sensoren_aus_storage_state(
     assert entry.state is ConfigEntryState.LOADED
     assert entry.runtime_data.data is state
 
-    entity_ids = _entity_ids_by_suffix(hass, entry)
+    entity_ids = entity_ids_by_key(hass, entry)
     assert hass.states.get(entity_ids["soc"]).state == "42"
-    assert hass.states.get(entity_ids["ladeleistung"]).state == "0"
-    assert hass.states.get(entity_ids["entladeleistung"]).state == "150"
+    assert hass.states.get(entity_ids["ist_ladeleistung"]).state == "0"
+    assert hass.states.get(entity_ids["ist_entladeleistung"]).state == "150"
 
 
 async def test_setup_entry_bei_verbindungsfehler_geht_in_retry(
@@ -89,7 +58,7 @@ async def test_setup_entry_bei_verbindungsfehler_geht_in_retry(
         AsyncMock(side_effect=StorageAdapterError("nicht erreichbar")),
     )
 
-    entry = _make_entry()
+    entry = make_marstek_entry()
     entry.add_to_hass(hass)
 
     assert not await hass.config_entries.async_setup(entry.entry_id)
@@ -114,7 +83,7 @@ async def test_poll_fehler_setzt_sensoren_auf_unavailable(
     monkeypatch.setattr(MarstekUdpAdapter, "read", read_mock)
     monkeypatch.setattr(MarstekUdpAdapter, "close", AsyncMock(return_value=None))
 
-    entry = _make_entry()
+    entry = make_marstek_entry()
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -124,5 +93,5 @@ async def test_poll_fehler_setzt_sensoren_auf_unavailable(
     await hass.async_block_till_done()
 
     assert entry.runtime_data.last_update_success is False
-    entity_ids = _entity_ids_by_suffix(hass, entry)
+    entity_ids = entity_ids_by_key(hass, entry)
     assert hass.states.get(entity_ids["soc"]).state == STATE_UNAVAILABLE

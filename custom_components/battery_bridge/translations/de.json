@@ -36,6 +36,14 @@
       "ist_entladeleistung": {
         "name": "Ist-Entladeleistung"
       }
+    },
+    "number": {
+      "soll_ladeleistung": {
+        "name": "Soll-Ladeleistung"
+      },
+      "soll_entladeleistung": {
+        "name": "Soll-Entladeleistung"
+      }
     }
   }
 }

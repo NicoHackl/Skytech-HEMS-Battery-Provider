@@ -41,15 +41,12 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
                                        │                      ┌─────────────┐
                                        └─────────────────────►│  Platforms  │
                                                                │ sensor.py   │
-                                                               │ number.py*  │
+                                                               │ number.py   │
                                                                └──────┬──────┘
                                                                       │ Entities
                                                                       ▼
                                                      HA-Core (Dashboards, HEMS, Automationen)
 ```
-
-`* number.py` ist noch nicht gebaut — Schreibzugriff ist M2, siehe [roadmap.md](roadmap.md) und
-[bekannte-luecken.md](bekannte-luecken.md).
 
 | Komponente | Verantwortung | Darf nicht |
 |---|---|---|
@@ -57,7 +54,7 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
 | `adapters/*.py` (`StorageAdapter`) | Ein Protokoll/Hersteller sprechen: `connect()`/`read()`/`write_*()`/`close()` | Wissen, wie Coordinator oder Platforms mit den Daten umgehen |
 | `coordinator.py` | Adapter im Poll-Intervall abfragen, `StorageState` an Platforms verteilen, Fehler in `UpdateFailed`/`ConfigEntryNotReady` übersetzen | Herstellerspezifisches Protokoll kennen — nur über `StorageAdapter` |
 | `sensor.py` | `StorageState`-Felder als HA-Entities abbilden | Eigene Poll- oder Verbindungslogik — das ist Aufgabe des Coordinators/Adapters |
-| `number.py` (M2, noch nicht gebaut) | Soll-Werte entgegennehmen, Schreibaufrufe an den Adapter durchreichen | Eigene Poll- oder Verbindungslogik |
+| `number.py` | Soll-Werte entgegennehmen, Schreibaufrufe an den Adapter durchreichen, Fehler als HA-Fehler melden | Eigene Poll- oder Verbindungslogik |
 
 Regel: Keine Komponente übernimmt Aufgaben einer anderen. Verschiebt sich eine Verantwortung,
 ist das eine Design-Entscheidung → [design-entscheidungen.md](design-entscheidungen.md).
@@ -75,9 +72,12 @@ Coordinator und bildet ihn als `sensor.*`-Entities ab. Schlägt eine Abfrage nac
 wirft der Adapter `StorageAdapterError`, der Coordinator übersetzt das in `UpdateFailed` und die
 Entities werden `unavailable` — kein Crash, kein Reload nötig.
 
-Der Schreibpfad (`number.*` → `write_charge_power()`/`write_discharge_power()`, ohne Umweg über
-den Coordinator) ist noch nicht gebaut — beide Methoden existieren im Marstek-Adapter, werfen
-aktuell aber `NotImplementedError` (M2, siehe [bekannte-luecken.md](bekannte-luecken.md)).
+Der Schreibpfad läuft ohne Umweg über den Coordinator: `number.py` ruft bei jeder Wertänderung
+direkt `adapter.write_charge_power()`/`write_discharge_power()` auf, meldet einen Fehlschlag als
+`HomeAssistantError` (nie still) und stößt bei Erfolg `coordinator.async_request_refresh()` an,
+damit die Ist-Werte zeitnah nachziehen. Kein aktiver Refresh-Loop hält den Sollwert am Leben —
+das übernimmt der `cd_time`-Watchdog im Adapter selbst (D-008). **Unverifiziert an echter
+Hardware**, siehe [bekannte-luecken.md](bekannte-luecken.md).
 
 Details zur öffentlichen Schnittstelle (Entities, Adapter-Vertrag): [api-referenz.md](api-referenz.md).
 
@@ -94,15 +94,17 @@ custom_components/battery_bridge/
 ├── adapters/
 │   ├── __init__.py
 │   ├── base.py                     # StorageAdapter-Protocol, StorageAdapterError
-│   └── marstek_udp.py               # Marstek Local API, UDP JSON-RPC Port 30000 — Lesezugriff
+│   └── marstek_udp.py               # Marstek Local API, UDP JSON-RPC Port 30000 — Lesen+Schreiben
 ├── sensor.py                        # SoC-%, Ist-Ladeleistung-W, Ist-Entladeleistung-W
-├── strings.json / translations/de.json   # Config-Flow- und Entity-Texte (identisch, siehe unten)
-└── (number.py — M2, noch nicht gebaut, siehe roadmap.md)
+├── number.py                         # Soll-Ladeleistung-W, Soll-Entladeleistung-W
+└── strings.json / translations/de.json   # Config-Flow- und Entity-Texte (identisch, siehe unten)
 
 tests/
 ├── adapters/test_marstek_udp.py   # gegen gemockten Transport, kein echter Socket
 ├── test_coordinator.py             # gegen den echten HA-Testkern (hass-Fixture)
-└── test_config_flow.py              # ebenso
+├── test_config_flow.py              # ebenso
+├── test_number.py                    # ebenso
+└── conftest.py                        # gemeinsame Test-Helfer (MockConfigEntry, Entity-Lookup)
 
 hacs.json, pyproject.toml            # HACS-Metadaten, uv-Projekt + Dev-Dependencies
 ```

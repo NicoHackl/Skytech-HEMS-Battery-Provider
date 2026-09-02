@@ -23,6 +23,9 @@ Datei angefasst wurde.
 - Drei Sensoren je eingerichtetem Speicher: Ladezustand, Ist-Ladeleistung, Ist-Entladeleistung —
   aktualisieren sich automatisch alle 5 Sekunden, zeigen „nicht verfügbar", wenn der Speicher
   gerade nicht antwortet
+- Soll-Ladeleistung und Soll-Entladeleistung lassen sich je Speicher setzen — **noch nicht an
+  echter Hardware getestet**, vor dem ersten Einsatz mit kleinem Wert prüfen (siehe
+  [docs/bekannte-luecken.md](docs/bekannte-luecken.md))
 
 ### Geändert
 

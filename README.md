@@ -15,11 +15,14 @@ ruff check .
 Installation über HACS (custom repository) oder manuell nach `custom_components/battery_bridge`
 kopieren, Home Assistant neu starten. Danach in **Einstellungen → Geräte & Dienste → Integration
 hinzufügen** nach „Battery Bridge" suchen, Hersteller wählen (aktuell Marstek), Verbindungsdaten
-eingeben. Pro physischem Speicher wird der Vorgang einmal wiederholt. Die entstehenden
-Lese-Entities (SoC, Ist-Lade-/Entladeleistung — Details: [docs/api-referenz.md](docs/api-referenz.md))
+eingeben. Pro physischem Speicher wird der Vorgang einmal wiederholt. Die entstehenden Entities
+(SoC, Ist-/Soll-Lade-/Entladeleistung — Details: [docs/api-referenz.md](docs/api-referenz.md))
 lassen sich wie jede andere HA-Entity in Dashboards, Automationen oder als Quelle für
-[SkytechHEMS](https://github.com/Skytech-Energy-Solutions) verwenden. Schreibzugriff (Soll-Leistung
-vorgeben) ist noch nicht umgesetzt, siehe [docs/roadmap.md](docs/roadmap.md).
+[SkytechHEMS](https://github.com/Skytech-Energy-Solutions) verwenden.
+
+**Schreibzugriff (Soll-Leistung) ist noch nicht an echter Hardware getestet** — vor dem ersten
+produktiven Einsatz erst mit einem kleinen Sollwert prüfen, siehe
+[docs/bekannte-luecken.md](docs/bekannte-luecken.md).
 
 ## Entwicklung
 

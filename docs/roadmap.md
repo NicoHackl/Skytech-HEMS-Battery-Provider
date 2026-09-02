@@ -39,11 +39,17 @@ diesem Praxistest gilt M1 als abgeschlossen (Plan Abschnitt 14, Schritt 4).
 
 **Ziel:** `number.*`-Entities setzen tatsächlich eine Lade-/Entladeleistung auf dem Speicher.
 
+**Status: in Arbeit.** Code steht und ist getestet, aber wie M1 **noch nie gegen eine echte
+Venus E 3.0 gelaufen** — bei einer Steuerung ist das riskanter als bei einer Anzeige, deshalb
+zusätzlich: erster Testlauf mit kleinem Sollwert, nicht mit einem produktionsnahen Wert
+(siehe [bekannte-luecken.md](bekannte-luecken.md)).
+
 | Punkt | Status | Verweis |
 |---|---|---|
-| Klärung: Passive-Mode-Sollwert oder Manual-Mode-Zeitfenster? (siehe [bekannte-luecken.md](bekannte-luecken.md)) | offen | |
-| `write_charge_power()`/`write_discharge_power()` im Adapter | offen | |
-| `number.py` | offen | |
+| Klärung: Passive-Mode-Sollwert oder Manual-Mode-Zeitfenster? | fertig — Passive-Mode, D-008 | [design-entscheidungen.md](design-entscheidungen.md) |
+| `write_charge_power()`/`write_discharge_power()` im Adapter, getestet | fertig | |
+| `number.py` | fertig | |
+| An echter Hardware bestätigen: Vorzeichen, Watchdog-Verhalten nach `cd_time` | offen | [bekannte-luecken.md](bekannte-luecken.md) |
 | Reaktionszeit an echter Hardware messen, Poll-Intervall justieren | offen | |
 
 ### M3 — HEMS-Anbindung

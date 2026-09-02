@@ -14,8 +14,12 @@ ein `device_info` (Hersteller, Modell, `unique_id` des Entry).
 | `sensor.<prefix>_soc` | sensor | % | lesen | umgesetzt (M1) |
 | `sensor.<prefix>_ist_ladeleistung` | sensor | W | lesen | umgesetzt (M1) |
 | `sensor.<prefix>_ist_entladeleistung` | sensor | W | lesen | umgesetzt (M1) |
-| `number.<prefix>_soll_ladeleistung` | number | W | schreiben | geplant, siehe [roadmap.md](roadmap.md) M2 |
-| `number.<prefix>_soll_entladeleistung` | number | W | schreiben | geplant, siehe [roadmap.md](roadmap.md) M2 |
+| `number.<prefix>_soll_ladeleistung` | number | W | schreiben | umgesetzt, unverifiziert an Hardware (M2) |
+| `number.<prefix>_soll_entladeleistung` | number | W | schreiben | umgesetzt, unverifiziert an Hardware (M2) |
+
+`number.*` liest sich nicht vom Gerät zurück (die Marstek Local API bietet dafür keinen
+Read-Pfad) — die Entity zeigt den zuletzt erfolgreich gesendeten Wert (`assumed_state`), nicht
+zwingend den tatsächlichen Gerätezustand.
 
 `None`/`available=False` im zugrundeliegenden `StorageState` löst `unavailable` aus — Details:
 [datenmodell.md](datenmodell.md).
@@ -35,8 +39,8 @@ class StorageAdapter(Protocol):
 ```
 
 `write_charge_power`/`write_discharge_power` melden Fehler über eine Exception, nie über einen
-stillen Fehlschlag. In `MarstekUdpAdapter` werfen beide aktuell `NotImplementedError` — der
-Schreibpfad ist erst mit M2 dran, siehe [bekannte-luecken.md](bekannte-luecken.md).
+stillen Fehlschlag. `MarstekUdpAdapter` setzt beide über `ES.SetMode` im Passive-Mode um — siehe
+[bekannte-luecken.md](bekannte-luecken.md) für Quellenlage und den noch offenen Hardware-Test.
 
 ## Fremde Schnittstellen
 
@@ -46,7 +50,7 @@ Von diesem Projekt **genutzte** externe Endpunkte:
 |---|---|---|---|
 | Marstek Local API, UDP Ziel-IP:30000 (konfigurierbar) | `ES.GetStatus` | SoC (`bat_soc`) + Lade-/Entladeleistung (`bat_power`) lesen | umgesetzt (M1) |
 | Marstek Local API | `Bat.GetStatus` | Detaillierterer Batteriestatus (Temperatur, Kapazität) — von dieser Integration bisher nicht genutzt | nicht genutzt |
-| Marstek Local API | `ES.SetMode` | Lade-/Entladeleistung schreiben (Passive- oder Manual-Mode, ungeklärt) | geplant (M2) |
+| Marstek Local API | `ES.SetMode` (Passive-Mode) | Lade-/Entladeleistung schreiben, `power` + `cd_time`-Watchdog | umgesetzt, unverifiziert an Hardware (M2) |
 | Marstek Local API | `Marstek.GetDevice` | Geräte-Discovery per UDP-Broadcast | nicht umgesetzt, siehe [roadmap.md](roadmap.md) |
 
 Timeout+Retry bei jedem Aufruf: 3× à 1 s, danach `StorageAdapterError` → `UpdateFailed` →

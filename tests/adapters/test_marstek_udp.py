@@ -145,3 +145,51 @@ async def test_read_ohne_connect_wirft_storage_adapter_error() -> None:
     adapter = MarstekUdpAdapter("127.0.0.1", 1)
     with pytest.raises(StorageAdapterError):
         await adapter.read()
+
+
+def _set_mode_responder(*, accept: bool) -> tuple[Responder, list[dict]]:
+    """Responder für ES.SetMode, der jeden gesendeten Request zur Prüfung mitschneidet."""
+    sent: list[dict] = []
+
+    def responder(request: dict) -> dict:
+        sent.append(request)
+        return {"id": request["id"], "src": "test", "result": {"id": 0, "set_result": accept}}
+
+    return responder, sent
+
+
+async def test_write_charge_power_sendet_negativen_passive_sollwert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Laden → Passive-Mode-`power` negativ, siehe Adapter-Moduldoc zur Vorzeichenkonvention."""
+    responder, sent = _set_mode_responder(accept=True)
+    adapter = await _connected_adapter(monkeypatch, responder)
+
+    await adapter.write_charge_power(500)
+
+    assert len(sent) == 1
+    config = sent[0]["params"]["config"]
+    assert config["mode"] == "Passive"
+    assert config["passive_cfg"]["power"] == -500
+
+
+async def test_write_discharge_power_sendet_positiven_passive_sollwert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Entladen → Passive-Mode-`power` positiv."""
+    responder, sent = _set_mode_responder(accept=True)
+    adapter = await _connected_adapter(monkeypatch, responder)
+
+    await adapter.write_discharge_power(750)
+
+    config = sent[0]["params"]["config"]
+    assert config["passive_cfg"]["power"] == 750
+
+
+async def test_write_wirft_wenn_geraet_sollwert_ablehnt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`set_result: false` ist ein abgelehnter Sollwert, kein stiller Erfolg."""
+    responder, _sent = _set_mode_responder(accept=False)
+    adapter = await _connected_adapter(monkeypatch, responder)
+
+    with pytest.raises(StorageAdapterError):
+        await adapter.write_charge_power(500)

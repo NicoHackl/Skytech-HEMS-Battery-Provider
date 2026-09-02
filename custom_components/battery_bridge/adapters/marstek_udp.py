@@ -1,14 +1,21 @@
-"""Marstek Local API — UDP-JSON-RPC-Adapter (Lesezugriff, M1).
+"""Marstek Local API — UDP-JSON-RPC-Adapter (Lese- und Schreibzugriff).
 
-Protokoll-Referenz — von Marstek nicht offiziell veröffentlicht, aus Community-Quellen
-zusammengetragen (siehe docs/bekannte-luecken.md für Details und offene Punkte):
-- https://github.com/Randyocean/Marstek/blob/main/docs/marstek_device_openapi.MD
-- https://github.com/taurgis/has-marstek-local-api (aktiv gepflegte Referenzintegration,
-  Venus E 3.0 ausdrücklich unterstützt, Venus E2.0 ausdrücklich NICHT)
+Protokoll-Referenz — von Marstek nicht offiziell veröffentlicht, aus vier unabhängigen
+Community-Quellen zusammengetragen (siehe docs/bekannte-luecken.md für Details, Quellenlage
+und die verbleibenden offenen Punkte):
+- https://github.com/Randyocean/Marstek/blob/main/docs/marstek_device_openapi.MD (Protokoll-Dump)
+- https://github.com/taurgis/has-marstek-local-api (Venus E 3.0 ausdrücklich unterstützt,
+  Venus E2.0 ausdrücklich NICHT)
+- https://github.com/jaapp/ha-marstek-local-api
+- https://github.com/leonscheltema/ha-marstek
 
-Schreibzugriff (`write_charge_power`/`write_discharge_power`) ist bewusst noch nicht
-implementiert — welcher Mechanismus (Passive-Mode-Sollwert vs. Manual-Mode-Zeitfenster) auf
-echter Hardware tatsächlich sicher funktioniert, ist ungeklärt (Plan Abschnitt 5, M2).
+Schreibzugriff läuft über `ES.SetMode` im Passive-Mode (`passive_cfg: {power, cd_time}`) — nicht
+über Manual-Mode-Zeitfenster: alle vier Quellen setzen für einen direkten Leistungs-Sollwert
+übereinstimmend auf Passive-Mode, Manual-Mode ist für feste Tageszeitpläne gedacht. `cd_time`
+ist ein Sicherheits-Watchdog: läuft er ab, ohne dass ein neuer Sollwert kommt, fällt das Gerät
+zurück in den vorherigen Modus — kein Sollwert bleibt für immer erzwungen, wenn HA nicht mehr
+antwortet. **Trotzdem unverifiziert an echter Hardware** (Plan Abschnitt 5, M1-Abnahme) — vor dem
+produktiven Einsatz prüfen, siehe docs/bekannte-luecken.md.
 """
 
 from __future__ import annotations
@@ -26,8 +33,12 @@ from .base import StorageAdapterError
 _LOGGER = logging.getLogger(__name__)
 
 _METHOD_ES_GET_STATUS = "ES.GetStatus"
+_METHOD_ES_SET_MODE = "ES.SetMode"
 _REQUEST_TIMEOUT_S = 1.0
 _REQUEST_RETRIES = 3
+# Sicherheits-Watchdog für den Passive-Mode-Sollwert (siehe Moduldoc) — Default von
+# leonscheltema/ha-marstek übernommen, dort ebenfalls der Standardwert der Entity.
+_PASSIVE_MODE_DURATION_S = 300
 
 
 class _MarstekUdpProtocol(asyncio.DatagramProtocol):
@@ -86,16 +97,29 @@ class MarstekUdpAdapter:
         )
 
     async def write_charge_power(self, watts: float) -> None:
-        raise NotImplementedError(
-            "Schreibzugriff auf die Marstek Local API ist noch nicht implementiert — "
-            "siehe docs/bekannte-luecken.md."
-        )
+        """Ladeleistung setzen — Passive Mode, `power` negativ = laden (siehe Moduldoc)."""
+        await self._set_passive_power(-watts)
 
     async def write_discharge_power(self, watts: float) -> None:
-        raise NotImplementedError(
-            "Schreibzugriff auf die Marstek Local API ist noch nicht implementiert — "
-            "siehe docs/bekannte-luecken.md."
+        """Entladeleistung setzen — Passive Mode, `power` positiv = entladen (siehe Moduldoc)."""
+        await self._set_passive_power(watts)
+
+    async def _set_passive_power(self, power: float) -> None:
+        result = await self._call(
+            _METHOD_ES_SET_MODE,
+            {
+                "id": 0,
+                "config": {
+                    "mode": "Passive",
+                    "passive_cfg": {
+                        "power": int(power),
+                        "cd_time": _PASSIVE_MODE_DURATION_S,
+                    },
+                },
+            },
         )
+        if not result.get("set_result"):
+            raise StorageAdapterError(f"Marstek-Gerät hat den Sollwert abgelehnt: {result!r}")
 
     async def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         if self._transport is None or self._protocol is None:

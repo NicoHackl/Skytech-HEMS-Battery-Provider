@@ -10,9 +10,7 @@ from .adapters.marstek_udp import MarstekUdpAdapter
 from .const import CONF_MANUFACTURER, CONF_PROTOCOL, MANUFACTURER_MARSTEK, PROTOCOL_MARSTEK_UDP
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
 
-# M1: nur Lesezugriff → nur die sensor-Plattform. number.py (Schreibzugriff) kommt mit M2,
-# siehe docs/roadmap.md.
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> bool:
