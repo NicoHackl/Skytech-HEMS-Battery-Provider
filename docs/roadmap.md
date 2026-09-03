@@ -67,7 +67,7 @@ Modbus-Automation.
 | Thema | Warum zurückgestellt | Bedingung für Wiederaufnahme |
 |---|---|---|
 | Weitere Hersteller/Protokolle (Modbus TCP, HTTP/REST, MQTT) | Marstek UDP ist der einzige aktuell benötigte Adapter | Marstek-Adapter stabil in Betrieb **und** konkreter Bedarf für einen zweiten Hersteller/Speicher |
-| Optionaler „Bridge"-Baustein, der die HEMS-Anforderungshelfer direkt übersetzt | Bewusst nicht Teil dieser Integration, um die HEMS-Grenze („kein direktes Schalten") nicht zu verwischen | Explizite Design-Entscheidung, falls die schlanke HA-Automation aus Abschnitt 9 in [plan.md](../plan.md) nicht ausreicht |
+| Geräte-Discovery per UDP-Broadcast (`Marstek.GetDevice`) im Config-Flow | Komfortfeature (plan.md Abschnitt 5) — manuelle IP-Eingabe im Config-Flow funktioniert bereits | Konkretes Nutzerfeedback, dass manuelle IP-Eingabe stört |
 
 ---
 

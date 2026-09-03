@@ -57,11 +57,16 @@ direkt mit einem Sollwert, der etwas kaputt machen kann.
 
 Dinge, die schon einmal Zeit gekostet haben:
 
-- Noch keine — Projekt ist im Scaffold-Stand.
+- **`StorageAdapterError`-Meldungen sind für das Log geschrieben, nicht für den Nutzer.** Sie
+  enthalten bewusst Host, Port, JSON-RPC-Methodennamen und rohe Antwort-Dicts (siehe
+  `adapters/marstek_udp.py`) — wertvoll beim Debuggen, aber ein Verstoß gegen Regel 12, sobald sie
+  unverändert in eine `HomeAssistantError` wandern. Genau das ist `number.py` passiert (siehe
+  CHANGELOG.md). Ein künftiger zweiter Adapter (D-006) muss dasselbe Muster einhalten: technisch
+  loggen, dann eine eigene Nutzermeldung bauen — nie `str(exc)` direkt an eine HA-Exception geben.
 
 ## Offene Bugs
 
-Noch keine — es existiert noch kein lauffähiger Code.
+Noch keine.
 
 ## Bewusst nicht umgesetzt
 

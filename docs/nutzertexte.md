@@ -1,8 +1,10 @@
 # Nutzertexte — was der Nutzer zu sehen bekommt
 
-> Gilt für **jede** Ausgabe an einen Menschen: Oberfläche, Toasts, Fehlermeldungen, E-Mails,
-> CLI-Ausgaben. Wie die Oberfläche *aussieht*, steht in [design-system.md](design-system.md), wie
-> sie *gebaut* ist in [frontend.md](frontend.md) — hier steht, was sie **sagt**.
+> Gilt für **jede** Ausgabe an einen Menschen: Config-Flow-Dialoge, Entity-Namen, Log-Meldungen,
+> Fehlermeldungen. Dieses Projekt hat keine eigene Oberfläche (eiserne Regel 8) — „Oberfläche"
+> meint hier ausschließlich die Home-Assistant-Standard-UI (Lovelace, Config-Flow, Toasts). Es
+> gibt deshalb kein `design-system.md`/`frontend.md` in diesem Repo — hier steht, was die
+> HA-Oberfläche **sagt**.
 
 ## Grundsatz
 
@@ -65,8 +67,10 @@ Festlegung stammt und keine Handlung des Nutzers ändert, wird nicht angezeigt.*
 - Relative Angaben („vor 5 Minuten") sind zulässig, aber **eine** Entscheidung fürs ganze Projekt —
   nicht mal so, mal anders. Beschluss nach
   [design-entscheidungen.md](design-entscheidungen.md).
-- Die Umrechnung passiert an genau **einer** Stelle (im Frontend `src/format.ts`), nicht verstreut
-  in den Seiten. Ein `toLocaleString`-Aufruf mitten im Markup ist ein Fehler.
+- Es gibt in diesem Repo keine eigene Formatierschicht wie in einem Frontend üblich — Einheiten,
+  Nachkommastellen und Zeitformate kommen aus den Standardattributen der HA-Entities
+  (`native_unit_of_measurement`, `device_class`, `suggested_display_precision`); die Anzeige
+  übernimmt Home Assistant selbst.
 - **Ausnahme, in der die Zone doch dazugehört:** Daten aus mehreren Zeitzonen, zwischen denen der
   Nutzer unterscheiden muss (Reise, internationale Termine). Das ist ein Sonderfall, der
   ausdrücklich entschieden wird — nicht der Normalfall, und nie ein pauschaler Zusatz.
