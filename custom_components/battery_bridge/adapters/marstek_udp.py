@@ -96,17 +96,29 @@ class MarstekUdpAdapter:
 
     async def read(self) -> StorageState:
         result = await self._call(_METHOD_ES_GET_STATUS, {"id": 0})
-        if "bat_power" not in result:
-            # Laut Marstek-Protokoll-Doku (docs/bekannte-luecken.md) ist `bat_power` ein
-            # reguläres Feld von ES.GetStatus — fehlt es trotzdem in einer echten Antwort,
-            # ist das kein geratener Sonderfall, sondern ein bislang unbeobachtetes
-            # Live-Verhalten. Komplette Rohantwort loggen statt zu raten, siehe Regel 7
-            # (AGENTS.md „Nicht raten").
+        if "bat_power" in result:
+            charge_power_w, discharge_power_w = _split_bat_power(result.get("bat_power"))
+        else:
+            # Laut Marstek-Protokoll-Doku ist `bat_power` ein reguläres Feld von ES.GetStatus —
+            # fehlt es trotzdem (an dieser Anlage durchgängig beobachtet, siehe
+            # docs/bekannte-luecken.md), ist das kein geratener Sonderfall, sondern ein
+            # bislang unbeobachtetes Live-Verhalten. Rohantwort loggen statt zu raten, siehe
+            # Regel 7 (AGENTS.md „Nicht raten").
             _LOGGER.debug(
                 "ES.GetStatus von %s:%s ohne Feld 'bat_power' — Rohantwort: %r",
                 self._host, self._port, result,
             )
-        charge_power_w, discharge_power_w = _split_bat_power(result.get("bat_power"))
+            # Ersatzweise `ongrid_power`: an dieser Anlage die einzige verfügbare Annäherung an
+            # die Ist-Leistung (vom User an echter Hardware beobachtet, nicht aus offizieller
+            # Doku). Deckt nur den Netz-Anteil ab, keinen Offgrid-/Backup-Anteil
+            # (`offgrid_power`, hier bislang immer 0) — bei aktivem Backup-Kreis würde ein Teil
+            # der tatsächlichen Batterieleistung fehlen. Vorzeichen umgekehrt zu `bat_power`:
+            # `ongrid_power` positiv heißt „speist ins Netz ein" (= entladen), negativ heißt
+            # „bezieht vom Netz" (= laden) — deshalb negiert, bevor es in dieselbe Aufteilung wie
+            # `bat_power` geht. Weiterhin nicht offiziell bestätigt, siehe bekannte-luecken.md.
+            ongrid_power = _as_float(result.get("ongrid_power"))
+            fallback_bat_power = -ongrid_power if ongrid_power is not None else None
+            charge_power_w, discharge_power_w = _split_bat_power(fallback_bat_power)
         return StorageState(
             soc_percent=_as_float(result.get("bat_soc")),
             charge_power_w=charge_power_w,

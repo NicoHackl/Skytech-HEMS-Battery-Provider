@@ -9,6 +9,21 @@ Kategorien: `Hinzugefügt`, `Geändert`, `Veraltet`, `Entfernt`, `Behoben`, `Sic
 Einträge werden aus **Nutzersicht** formuliert — was sich für den Anwender ändert, nicht welche
 Datei angefasst wurde.
 
+## [0.2.1] — 03.09.2026
+
+### Behoben
+
+- Speicher „sprang" ständig auf 0 W und wieder zurück, solange die HEMS-Anbindung aktiv war —
+  jede Anpassung der Soll-Leistung hat die inaktive Richtung unnötig auf 0 gesetzt, bevor die
+  eigentlich gewünschte Richtung geschrieben wurde. Beide Befehle landen bei diesem Speicher auf
+  demselben Gerätewert, dadurch kam der Zwischenschritt am Gerät als kurzer Sprung an. Die
+  inaktive Richtung wird jetzt nur noch beim tatsächlichen Wechsel zwischen Laden/Entladen/
+  Standby einmal zurückgesetzt.
+- Ist-Ladeleistung/Ist-Entladeleistung zeigten auf manchen Anlagen dauerhaft „nicht verfügbar",
+  weil der Speicher den erwarteten Leistungswert nicht mitliefert. Die Integration weicht in
+  diesem Fall auf einen Ersatzwert aus einem anderen, vom Speicher gelieferten Feld aus — siehe
+  [docs/bekannte-luecken.md](docs/bekannte-luecken.md) für Details und Einschränkungen.
+
 ## [0.2.0] — 03.09.2026
 
 ### Hinzugefügt

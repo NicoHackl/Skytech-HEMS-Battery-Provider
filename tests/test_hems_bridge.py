@@ -123,6 +123,67 @@ async def test_nicht_numerische_leistung_wird_als_null_behandelt(
     assert calls == [("discharge", 0.0), ("charge", 0.0)]
 
 
+async def test_gleichbleibende_betriebsart_setzt_inaktive_richtung_nicht_erneut_auf_null(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bleibt die Betriebsart gleich, darf eine reine Leistungsanpassung die inaktive Richtung
+    nicht erneut auf 0 setzen — sonst träfen zwei Befehle (0, dann Zielwert) hintereinander
+    denselben Passive-Mode-Sollwert und der Speicher spränge bei jeder Anpassung kurz auf 0 W."""
+    calls, _entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    hass.states.async_set(_POWER_ENTITY, "950")  # nur die Leistung ändert sich
+    await hass.async_block_till_done()
+
+    assert calls == [("charge", 950.0)]  # kein ("discharge", 0.0) davor
+
+
+async def test_wechsel_der_betriebsart_setzt_inaktive_richtung_erneut_auf_null(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ein tatsächlicher Richtungswechsel muss die bisher aktive Richtung weiterhin auf 0
+    setzen, bevor die neue Richtung greift."""
+    calls, _entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    hass.states.async_set(_MODE_ENTITY, "entladen")
+    await hass.async_block_till_done()
+
+    assert calls == [("charge", 0.0), ("discharge", 800.0)]
+
+
+async def test_nach_fehlgeschlagenem_wechsel_wird_beim_naechsten_sync_erneut_genullt(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Schlägt der Zero-Schritt bei einem Richtungswechsel fehl, gilt der Wechsel nicht als
+    übernommen — der nächste Sync muss ihn erneut versuchen, statt dauerhaft von der falschen,
+    zuvor aktiven Richtung auszugehen."""
+    calls, _entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=StorageAdapterError("boom")),
+    )
+    hass.states.async_set(_MODE_ENTITY, "entladen")
+    await hass.async_block_till_done()
+    assert calls == []  # write_charge_power(0) ist der erste Aufruf und schlägt sofort fehl
+
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=lambda watts: calls.append(("charge", watts))),
+    )
+    hass.states.async_set(_POWER_ENTITY, "801")  # neuer Wert löst einen neuen Sync aus
+    await hass.async_block_till_done()
+
+    assert calls == [("charge", 0.0), ("discharge", 801.0)]
+
+
 async def test_schreibfehler_wird_geloggt_nicht_propagiert(
     hass: HomeAssistant,
     monkeypatch: pytest.MonkeyPatch,

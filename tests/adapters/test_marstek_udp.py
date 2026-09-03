@@ -102,6 +102,47 @@ async def test_read_leerzustand_bei_fehlenden_feldern(monkeypatch: pytest.Monkey
     assert state.available is True  # Antwort kam an, nur ohne die erwarteten Felder
 
 
+async def test_read_nutzt_ongrid_power_wenn_bat_power_fehlt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fehlt `bat_power` komplett (an echter Hardware beobachtet, siehe bekannte-luecken.md),
+    wird `ongrid_power` als Ersatz herangezogen — negiert, da dort positiv „einspeisen"
+    (= entladen) bedeutet, negativ „vom Netz beziehen" (= laden)."""
+    adapter = await _connected_adapter(
+        monkeypatch, _status_responder({"bat_soc": 85, "ongrid_power": -420, "offgrid_power": 0})
+    )
+    state = await adapter.read()
+
+    assert state.charge_power_w == 420  # negatives ongrid_power → laden
+    assert state.discharge_power_w == 0
+
+
+async def test_read_ongrid_power_positiv_ergibt_entladeleistung(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = await _connected_adapter(
+        monkeypatch, _status_responder({"bat_soc": 85, "ongrid_power": 538})
+    )
+    state = await adapter.read()
+
+    assert state.charge_power_w == 0
+    assert state.discharge_power_w == 538
+
+
+async def test_read_ignoriert_ongrid_power_wenn_bat_power_vorhanden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`bat_power` hat Vorrang — `ongrid_power` ist nur der Notbehelf, wenn es fehlt."""
+    adapter = await _connected_adapter(
+        monkeypatch,
+        _status_responder({"bat_soc": 85, "bat_power": 100, "ongrid_power": -9999}),
+    )
+    state = await adapter.read()
+
+    assert state.charge_power_w == 100
+    assert state.discharge_power_w == 0
+
+
 async def test_read_fehlerfall_wirft_nach_retries_storage_adapter_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
