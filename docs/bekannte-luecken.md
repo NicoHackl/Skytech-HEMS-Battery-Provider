@@ -53,6 +53,36 @@ steuert echte Leistung, ein Lesewert nur eine Anzeige. Deshalb: erster produktiv
 kleinem Sollwert (z. B. 100 W) und Blick auf die tatsächliche Reaktion des Speichers, nicht
 direkt mit einem Sollwert, der etwas kaputt machen kann.
 
+## An echter Venus E 3.0 beobachtet (03.09.2026)
+
+Erster Praxiskontakt der Integration mit einer echten Anlage. SoC-Anzeige und ein erstes manuelles
+Setzen der Soll-Lade-/Entladeleistung funktionierten; danach zwei Auffälligkeiten:
+
+- **`ES.SetMode`-Aufrufe der HEMS-Anbindung timeoueten fast durchgehend, `ES.GetStatus`
+  (Coordinator-Poll) nur gelegentlich.** Ursache gefunden und behoben: `MarstekUdpAdapter`
+  teilte eine einzige Antwort-Queue zwischen allen `_call()`-Aufrufen, ohne sie zu
+  serialisieren — der Coordinator-Poll (fester 5-s-Takt) und die HEMS-Anbindung (eigener Task,
+  ausgelöst bei jeder Änderung der HEMS-Anforderungshelfer, damit im Sekundentakt) liefen auf
+  demselben Adapter parallel. Traf die Antwort auf Anfrage A ein, während eine andere Anfrage B
+  gerade in ihrer eigenen Warteschleife auf die Queue wartete, konnte B sie zuerst aus der Queue
+  holen, an der ID als fremd erkennen und per `continue` verwerfen (nicht zurücklegen) — A bekam
+  seine eigene, korrekte Antwort nie zugestellt und timeoutete, obwohl das Gerät geantwortet
+  hatte. Da die HEMS-Anbindung viel häufiger sendet als der Poll, traf es `ES.SetMode` fast
+  immer. Fix: `asyncio.Lock` in `adapters/marstek_udp.py`, serialisiert jetzt jeden
+  Request-Antwort-Zyklus vollständig — Test `test_gleichzeitige_aufrufe_teilen_sich_nicht_die_antwort`.
+- **Offen, weiterhin nicht geraten:** `sensor.<prefix>_ist_ladeleistung`/`_ist_entladeleistung`
+  zeigten dauerhaft `unknown`, obwohl `sensor.<prefix>_ladezustand` (SoC) im selben Zeitraum
+  gültige Werte aus demselben `ES.GetStatus`-Aufruf zeigte. `bat_power` ist laut
+  Randyocean-Protokoll-Dump ein reguläres Feld dieser Antwort (Beispiel dort zeigt `bat_power: 0`
+  im Leerlauf) — auf der echten Anlage fehlt es im Ergebnis aber anscheinend, obwohl `bat_soc` im
+  selben Ergebnis vorhanden ist. Ob das am Firmwarestand der Venus E 3.0, an einem
+  Anlagenzustand (z. B. Standby) oder an einer noch unbekannten dritten Ursache liegt, ist
+  unklar — dafür fehlt die rohe Antwort. `read()` loggt eine fehlende `bat_power` deshalb jetzt
+  auf Debug-Level mit der vollständigen Rohantwort (`adapters/marstek_udp.py`). **Nächster
+  Schritt:** Log-Level für `custom_components.battery_bridge` auf `debug` stellen, eine Zeit
+  über verschiedene Anlagenzustände (Laden/Entladen/Standby) laufen lassen, Rohantwort
+  auswerten — erst danach hier eintragen, was tatsächlich der Fall ist.
+
 ## Stolpersteine
 
 Dinge, die schon einmal Zeit gekostet haben:

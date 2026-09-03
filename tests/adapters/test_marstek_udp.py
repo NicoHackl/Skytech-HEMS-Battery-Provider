@@ -193,3 +193,60 @@ async def test_write_wirft_wenn_geraet_sollwert_ablehnt(monkeypatch: pytest.Monk
 
     with pytest.raises(StorageAdapterError):
         await adapter.write_charge_power(500)
+
+
+async def test_gleichzeitige_aufrufe_teilen_sich_nicht_die_antwort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """read() (Coordinator) und write_*() (HEMS-Anbindung) laufen auf demselben Adapter, aber
+    als unabhängige Tasks nebeneinander. Ohne Serialisierung konnte die Antwort auf Request A
+    bei der wartenden Schleife von Request B landen und wurde dort mangels ID-Match verworfen
+    (`continue`) statt A zugestellt zu werden — A timeoutete, obwohl das Gerät geantwortet hat.
+    Dieser Test hält einen ersten Request gezielt offen und startet währenddessen einen
+    zweiten: Der zweite darf sein Paket erst senden, nachdem der erste seine Antwort erhalten
+    hat — sonst könnten sich beide Antworten wie beschrieben in die Quere kommen.
+    """
+    reply_released = asyncio.Event()
+    sent: list[dict] = []
+
+    class _DeferredTransport:
+        def __init__(self, protocol: asyncio.DatagramProtocol) -> None:
+            self._protocol = protocol
+            self.closed = False
+
+        def sendto(self, data: bytes, addr: object = None) -> None:
+            request = json.loads(data)
+            sent.append(request)
+
+            async def _deliver() -> None:
+                await reply_released.wait()
+                reply = {"id": request["id"], "src": "test", "result": {"bat_soc": 1}}
+                self._protocol.datagram_received(json.dumps(reply).encode(), ("127.0.0.1", 0))
+
+            asyncio.ensure_future(_deliver())
+
+        def close(self) -> None:
+            self.closed = True
+
+    async def fake_create_datagram_endpoint(protocol_factory, **_kwargs):
+        protocol = protocol_factory()
+        return _DeferredTransport(protocol), protocol
+
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "create_datagram_endpoint", fake_create_datagram_endpoint)
+    adapter = MarstekUdpAdapter("127.0.0.1", 30000)
+    await adapter.connect()
+
+    task_a = asyncio.ensure_future(adapter.read())
+    await asyncio.sleep(0)  # Request A ist gesendet, wartet auf Antwort
+    assert len(sent) == 1
+
+    task_b = asyncio.ensure_future(adapter.read())
+    await asyncio.sleep(0)
+    # Request B darf noch nicht gesendet sein — der Lock hält B, bis A fertig ist.
+    assert len(sent) == 1
+
+    reply_released.set()
+    await task_a
+    await task_b
+    assert len(sent) == 2

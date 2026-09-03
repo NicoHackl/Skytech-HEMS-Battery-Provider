@@ -66,6 +66,15 @@ class MarstekUdpAdapter:
         # verhindert, dass eine verspätete Antwort auf einen früheren Request als aktuell
         # durchgeht.
         self._request_ids = itertools.count(1)
+        # Serialisiert alle _call()-Aufrufe: Coordinator-Poll (read()) und HEMS-Anbindung
+        # (write_charge_power()/write_discharge_power(), auf demselben Adapter, aber als
+        # eigener, event-getriebener Task) griffen sonst gleichzeitig auf dieselbe
+        # Antwort-Queue zu. Eine fremde Antwort wird dort per `continue` verworfen statt
+        # zurückgelegt — der eigentliche Empfänger sieht sie nie und timeoutet, obwohl das
+        # Gerät korrekt geantwortet hat. Ohne Lock erklärt das genau das beobachtete Muster:
+        # ES.SetMode (sehr häufig durch die HEMS-Anbindung ausgelöst) timeoutet praktisch
+        # immer, ES.GetStatus (fester 5-s-Takt) nur gelegentlich.
+        self._call_lock = asyncio.Lock()
 
     async def connect(self) -> None:
         loop = asyncio.get_running_loop()
@@ -87,6 +96,16 @@ class MarstekUdpAdapter:
 
     async def read(self) -> StorageState:
         result = await self._call(_METHOD_ES_GET_STATUS, {"id": 0})
+        if "bat_power" not in result:
+            # Laut Marstek-Protokoll-Doku (docs/bekannte-luecken.md) ist `bat_power` ein
+            # reguläres Feld von ES.GetStatus — fehlt es trotzdem in einer echten Antwort,
+            # ist das kein geratener Sonderfall, sondern ein bislang unbeobachtetes
+            # Live-Verhalten. Komplette Rohantwort loggen statt zu raten, siehe Regel 7
+            # (AGENTS.md „Nicht raten").
+            _LOGGER.debug(
+                "ES.GetStatus von %s:%s ohne Feld 'bat_power' — Rohantwort: %r",
+                self._host, self._port, result,
+            )
         charge_power_w, discharge_power_w = _split_bat_power(result.get("bat_power"))
         return StorageState(
             soc_percent=_as_float(result.get("bat_soc")),
@@ -125,6 +144,13 @@ class MarstekUdpAdapter:
         if self._transport is None or self._protocol is None:
             raise StorageAdapterError("Adapter ist nicht verbunden — connect() nicht aufgerufen.")
 
+        # Serialisiert — siehe Kommentar zu `_call_lock` in __init__(). Ohne diesen Lock teilen
+        # sich ein gleichzeitiger read() (Coordinator) und write_*() (HEMS-Anbindung) dieselbe
+        # Antwort-Queue und können sich gegenseitig die Antwort stehlen.
+        async with self._call_lock:
+            return await self._call_locked(method, params)
+
+    async def _call_locked(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         request_id = next(self._request_ids)
         payload = json.dumps({"id": request_id, "method": method, "params": params}).encode()
         loop = asyncio.get_running_loop()
