@@ -15,6 +15,7 @@ from custom_components.battery_bridge.adapters.base import StorageAdapterError
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
 from custom_components.battery_bridge.const import (
     CONF_DISPLAY_NAME,
+    CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
     DOMAIN,
@@ -64,9 +65,32 @@ async def test_erfolgreicher_flow_legt_entry_mit_verbindungsdaten_an(
         CONF_PROTOCOL: PROTOCOL_MARSTEK_UDP,
         CONF_HOST: "192.168.1.42",
         CONF_PORT: 30000,
+        CONF_HEMS_ENTITY_PREFIX: None,
     }
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert entry.unique_id == "192.168.1.42:30000"
+
+
+async def test_hems_praefix_wird_in_den_entry_uebernommen(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ein angegebenes HEMS-Präfix landet unverändert in `entry.data` (aktiviert hems_bridge.py)."""
+    monkeypatch.setattr(MarstekUdpAdapter, "connect", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "read", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "close", AsyncMock(return_value=None))
+
+    marstek_step = await _start_marstek_step(hass)
+    result = await hass.config_entries.flow.async_configure(
+        marstek_step["flow_id"],
+        {
+            CONF_HOST: "192.168.1.42",
+            CONF_PORT: 30000,
+            CONF_HEMS_ENTITY_PREFIX: "acspeicher1",
+        },
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_HEMS_ENTITY_PREFIX] == "acspeicher1"
 
 
 async def test_ohne_anzeigename_faellt_titel_auf_marstek_host_zurueck(

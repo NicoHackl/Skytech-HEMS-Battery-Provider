@@ -68,12 +68,21 @@ Dinge, die schon einmal Zeit gekostet haben:
 
 Noch keine.
 
+## Vor dem produktiven Einsatz der HEMS-Anbindung (`hems_bridge.py`) zu bestätigen
+
+Dieselbe Vorsicht wie bei M2 (siehe oben) — die Übersetzungslogik selbst ist getestet, aber die
+Schreibaufrufe, die sie auslöst, laufen über denselben unverifizierten Marstek-Schreibpfad:
+
+| Frage | Betrifft | Blockiert |
+|---|---|---|
+| Löst ein Wechsel von `laden`/`entladen`/`standby` am Gerät tatsächlich die erwartete Richtung aus, in der von `hems_bridge.py` gewählten Reihenfolge (inaktiv zuerst auf 0)? | `hems_bridge.py: _async_sync()` | Aktivierung der HEMS-Anbindung an echter Hardware |
+| Solange die HEMS-Anbindung für einen Entry aktiv ist, überschreibt sie laufend die eigenen `number.*_soll_*`-Entities — manuelles Bedienen dieser Entities in diesem Zustand wird vom nächsten HEMS-Zyklus (Sekundentakt) sofort wieder verworfen. | `number.py` vs. `hems_bridge.py` | Kein Bug, aber überraschend, wenn nicht dokumentiert |
+
 ## Bewusst nicht umgesetzt
 
 | Thema | Warum nicht | Verweis |
 |---|---|---|
 | Weitere Hersteller/Protokolle (Modbus TCP, HTTP/REST, MQTT) | Kein aktueller Bedarf, Marstek UDP deckt den Start | D-006, [roadmap.md](roadmap.md) |
-| „Bridge"-Baustein, der HEMS-Anforderungshelfer direkt übersetzt | Würde die HEMS-Architekturgrenze verwischen | D-005, [roadmap.md](roadmap.md) |
 
 ---
 

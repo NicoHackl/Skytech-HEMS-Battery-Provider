@@ -4,9 +4,10 @@
 
 Keine. Dieses Projekt läuft als Teil von Home Assistant und wird **nicht** über `.env`/Umgebungs-
 variablen konfiguriert, sondern ausschließlich über die HA-eigene Config-Entry-UI
-(`config_flow.py`) — pro physischem Speicher ein Entry mit Host/IP, Port und Hersteller/Protokoll.
-HA speichert diese Werte selbst (`.storage/core.config_entries`), diese Integration verwaltet
-keinen eigenen Konfigurationsspeicher.
+(`config_flow.py`) — pro physischem Speicher ein Entry mit Host/IP, Port, Hersteller/Protokoll und
+optional einem `hems_entity_prefix` (aktiviert die eingebaute HEMS-Anbindung, siehe
+[api-referenz.md](api-referenz.md), leer = deaktiviert). HA speichert diese Werte selbst
+(`.storage/core.config_entries`), diese Integration verwaltet keinen eigenen Konfigurationsspeicher.
 
 ## Konfigurationsdateien
 

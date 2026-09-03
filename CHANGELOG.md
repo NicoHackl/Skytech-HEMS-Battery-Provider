@@ -26,6 +26,11 @@ Datei angefasst wurde.
 - Soll-Ladeleistung und Soll-Entladeleistung lassen sich je Speicher setzen — **noch nicht an
   echter Hardware getestet**, vor dem ersten Einsatz mit kleinem Wert prüfen (siehe
   [docs/bekannte-luecken.md](docs/bekannte-luecken.md))
+- Optionale HEMS-Anbindung: beim Einrichten eines Speichers lässt sich ein SkytechHEMS-Präfix
+  hinterlegen (z. B. `acspeicher1`) — ab dann übersetzt die Integration die
+  HEMS-Anforderungshelfer selbst laufend in Soll-Lade-/Entladeleistung, ohne dass dafür eine
+  eigene Home-Assistant-Automation nötig ist. Leer lassen, wenn der Speicher nicht von
+  SkytechHEMS gesteuert wird — **ebenfalls noch nicht an echter Hardware getestet**
 
 ### Geändert
 

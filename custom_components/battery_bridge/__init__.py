@@ -7,8 +7,15 @@ from homeassistant.core import HomeAssistant
 
 from .adapters.base import StorageAdapter
 from .adapters.marstek_udp import MarstekUdpAdapter
-from .const import CONF_MANUFACTURER, CONF_PROTOCOL, MANUFACTURER_MARSTEK, PROTOCOL_MARSTEK_UDP
+from .const import (
+    CONF_HEMS_ENTITY_PREFIX,
+    CONF_MANUFACTURER,
+    CONF_PROTOCOL,
+    MANUFACTURER_MARSTEK,
+    PROTOCOL_MARSTEK_UDP,
+)
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
+from .hems_bridge import HemsBridge
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER]
 
@@ -19,16 +26,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry
     coordinator = BatteryBridgeCoordinator(hass, entry, adapter)
     await coordinator.async_config_entry_first_refresh()
 
+    hems_entity_prefix = entry.data.get(CONF_HEMS_ENTITY_PREFIX)
+    if hems_entity_prefix:
+        coordinator.hems_bridge = HemsBridge(coordinator, hems_entity_prefix)
+        await coordinator.hems_bridge.async_setup()
+
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> bool:
-    """Platforms entladen und den Adapter-Transport sauber schließen."""
+    """Platforms entladen, die HEMS-Anbindung (falls aktiv) und den Adapter-Transport schließen."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
-        await entry.runtime_data.adapter.close()
+        coordinator = entry.runtime_data
+        if coordinator.hems_bridge is not None:
+            coordinator.hems_bridge.async_unload()
+        await coordinator.adapter.close()
     return unloaded
 
 

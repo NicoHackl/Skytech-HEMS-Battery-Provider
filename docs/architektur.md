@@ -55,6 +55,7 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
 | `coordinator.py` | Adapter im Poll-Intervall abfragen, `StorageState` an Platforms verteilen, Fehler in `UpdateFailed`/`ConfigEntryNotReady` übersetzen | Herstellerspezifisches Protokoll kennen — nur über `StorageAdapter` |
 | `sensor.py` | `StorageState`-Felder als HA-Entities abbilden | Eigene Poll- oder Verbindungslogik — das ist Aufgabe des Coordinators/Adapters |
 | `number.py` | Soll-Werte entgegennehmen, Schreibaufrufe an den Adapter durchreichen, Fehler als HA-Fehler melden | Eigene Poll- oder Verbindungslogik |
+| `hems_bridge.py` (optional, nur mit HEMS-Präfix) | HEMS' Anforderungshelfer (`input_number`/`input_select`) beobachten, bei Änderung 1:1 in Adapter-Schreibaufrufe übersetzen (D-009) | Eigene Regel- oder Verteilungslogik — nur Übersetzung; andere Entities als die eigenen HEMS-Helfer lesen |
 
 Regel: Keine Komponente übernimmt Aufgaben einer anderen. Verschiebt sich eine Verantwortung,
 ist das eine Design-Entscheidung → [design-entscheidungen.md](design-entscheidungen.md).
@@ -79,6 +80,18 @@ damit die Ist-Werte zeitnah nachziehen. Kein aktiver Refresh-Loop hält den Soll
 das übernimmt der `cd_time`-Watchdog im Adapter selbst (D-008). **Unverifiziert an echter
 Hardware**, siehe [bekannte-luecken.md](bekannte-luecken.md).
 
+**Optionaler zweiter Schreibpfad — HEMS-Anbindung (D-009):** Ist im Config-Entry ein HEMS-Präfix
+hinterlegt, hört `hems_bridge.py` per `async_track_state_change_event` auf
+`input_number.ems_<prefix>_anforderung_leistung_w` und
+`input_select.ems_<prefix>_anforderung_betriebsart` und ruft bei jeder Änderung dieselben
+`adapter.write_charge_power()`/`write_discharge_power()` auf wie `number.py` — nur ausgelöst durch
+HEMS' eigene Helfer statt durch eine `number.set_value`-Service-Aktion. Ein Fehlschlag wird hier
+nur geloggt, nie als `HomeAssistantError` geworfen (kein Service-Aufrufer, dem ein Toast angezeigt
+werden könnte). Das ist genau die in `plan.md` §9 als „später, optionaler Bridge-Baustein"
+angekündigte Erweiterung, jetzt Teil der Integration statt einer externen HA-Automation — siehe
+[design-entscheidungen.md](design-entscheidungen.md) D-009 und
+[docs/adr/D-009-hems-anbindung-in-integration.md](adr/D-009-hems-anbindung-in-integration.md).
+
 Details zur öffentlichen Schnittstelle (Entities, Adapter-Vertrag): [api-referenz.md](api-referenz.md).
 
 ## Verzeichnisstruktur
@@ -97,6 +110,7 @@ custom_components/battery_bridge/
 │   └── marstek_udp.py               # Marstek Local API, UDP JSON-RPC Port 30000 — Lesen+Schreiben
 ├── sensor.py                        # SoC-%, Ist-Ladeleistung-W, Ist-Entladeleistung-W
 ├── number.py                         # Soll-Ladeleistung-W, Soll-Entladeleistung-W
+├── hems_bridge.py                     # optional: HEMS-Anforderungshelfer → Adapter (D-009)
 └── strings.json / translations/de.json   # Config-Flow- und Entity-Texte (identisch, siehe unten)
 
 tests/
@@ -104,6 +118,7 @@ tests/
 ├── test_coordinator.py             # gegen den echten HA-Testkern (hass-Fixture)
 ├── test_config_flow.py              # ebenso
 ├── test_number.py                    # ebenso
+├── test_hems_bridge.py                # ebenso
 └── conftest.py                        # gemeinsame Test-Helfer (MockConfigEntry, Entity-Lookup)
 
 hacs.json, pyproject.toml            # HACS-Metadaten, uv-Projekt + Dev-Dependencies

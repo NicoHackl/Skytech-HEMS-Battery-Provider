@@ -14,6 +14,7 @@ from .adapters.base import StorageAdapterError
 from .adapters.marstek_udp import MarstekUdpAdapter
 from .const import (
     CONF_DISPLAY_NAME,
+    CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
     DOMAIN,
@@ -90,6 +91,7 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_PROTOCOL: PROTOCOL_MARSTEK_UDP,
                         CONF_HOST: host,
                         CONF_PORT: port,
+                        CONF_HEMS_ENTITY_PREFIX: user_input.get(CONF_HEMS_ENTITY_PREFIX) or None,
                     },
                 )
             finally:
@@ -102,6 +104,7 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_DISPLAY_NAME): str,
                     vol.Required(CONF_HOST): str,
                     vol.Required(CONF_PORT, default=MARSTEK_UDP_DEFAULT_PORT): int,
+                    vol.Optional(CONF_HEMS_ENTITY_PREFIX): str,
                 }
             ),
             errors=errors,

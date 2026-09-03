@@ -14,7 +14,8 @@
         "data": {
           "display_name": "Anzeigename (optional)",
           "host": "IP-Adresse",
-          "port": "UDP-Port"
+          "port": "UDP-Port",
+          "hems_entity_prefix": "SkytechHEMS-Präfix (optional, z. B. \"acspeicher1\") — bindet diesen Speicher direkt an SkytechHEMS an. Leer lassen, wenn er nicht von SkytechHEMS gesteuert wird."
         }
       }
     },

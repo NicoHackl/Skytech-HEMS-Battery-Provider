@@ -8,6 +8,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.battery_bridge.const import (
+    CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
     DOMAIN,
@@ -17,9 +18,17 @@ from custom_components.battery_bridge.const import (
 
 
 def make_marstek_entry(
-    *, host: str = "127.0.0.1", port: int = 30000, title: str = "Marstek 127.0.0.1"
+    *,
+    host: str = "127.0.0.1",
+    port: int = 30000,
+    title: str = "Marstek 127.0.0.1",
+    hems_entity_prefix: str | None = None,
 ) -> MockConfigEntry:
-    """Ein `MockConfigEntry`, wie ihn der echte Config-Flow für Marstek/UDP anlegen würde."""
+    """Ein `MockConfigEntry`, wie ihn der echte Config-Flow für Marstek/UDP anlegen würde.
+
+    `hems_entity_prefix` entspricht dem gleichnamigen, optionalen Config-Flow-Feld — gesetzt,
+    wenn ein Test die eingebaute HEMS-Anbindung (hems_bridge.py) mit einrichten soll.
+    """
     return MockConfigEntry(
         domain=DOMAIN,
         unique_id=f"{host}:{port}",
@@ -29,6 +38,7 @@ def make_marstek_entry(
             CONF_PROTOCOL: PROTOCOL_MARSTEK_UDP,
             CONF_HOST: host,
             CONF_PORT: port,
+            CONF_HEMS_ENTITY_PREFIX: hems_entity_prefix,
         },
     )
 

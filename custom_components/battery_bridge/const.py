@@ -12,6 +12,10 @@ CONF_DISPLAY_NAME: Final = "display_name"
 CONF_MANUFACTURER: Final = "manufacturer"
 CONF_PROTOCOL: Final = "protocol"
 
+# Optional: HEMS-Geräte-Präfix für die eingebaute HEMS-Anbindung (siehe hems_bridge.py, D-009).
+# Leer/fehlend heißt: dieser Speicher wird nicht von SkytechHEMS gesteuert, nur Entities liefern.
+CONF_HEMS_ENTITY_PREFIX: Final = "hems_entity_prefix"
+
 # Bisher einziger Hersteller/Protokoll — Auswahl im Config-Flow trotzdem als Select,
 # damit ein zweiter Adapter (Regel: Hersteller × Protokoll, siehe D-006) keine
 # Flow-Umstellung braucht, nur einen neuen Eintrag in MANUFACTURERS.

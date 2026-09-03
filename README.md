@@ -20,6 +20,11 @@ eingeben. Pro physischem Speicher wird der Vorgang einmal wiederholt. Die entste
 lassen sich wie jede andere HA-Entity in Dashboards, Automationen oder als Quelle für
 [SkytechHEMS](https://github.com/Skytech-Energy-Solutions) verwenden.
 
+Wird dieser Speicher von SkytechHEMS gesteuert, im selben Einrichtungsschritt das
+**SkytechHEMS-Präfix** eintragen (z. B. `acspeicher1`) — die Integration übersetzt dann die
+HEMS-Anforderungshelfer selbst laufend in Soll-Lade-/Entladeleistung, es ist keine zusätzliche
+Home-Assistant-Automation nötig. Leer lassen für reine Entity-Nutzung ohne SkytechHEMS.
+
 **Schreibzugriff (Soll-Leistung) ist noch nicht an echter Hardware getestet** — vor dem ersten
 produktiven Einsatz erst mit einem kleinen Sollwert prüfen, siehe
 [docs/bekannte-luecken.md](docs/bekannte-luecken.md).
