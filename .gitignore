@@ -1,0 +1,24 @@
+# Secrets / lokale Konfiguration
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node (falls je ein Frontend dazukommt)
+node_modules/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
