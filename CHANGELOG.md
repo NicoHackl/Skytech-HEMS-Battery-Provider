@@ -9,7 +9,7 @@ Kategorien: `Hinzugefügt`, `Geändert`, `Veraltet`, `Entfernt`, `Behoben`, `Sic
 Einträge werden aus **Nutzersicht** formuliert — was sich für den Anwender ändert, nicht welche
 Datei angefasst wurde.
 
-## [Unveröffentlicht]
+## [0.2.0] — 03.09.2026
 
 ### Hinzugefügt
 
@@ -23,14 +23,16 @@ Datei angefasst wurde.
 - Drei Sensoren je eingerichtetem Speicher: Ladezustand, Ist-Ladeleistung, Ist-Entladeleistung —
   aktualisieren sich automatisch alle 5 Sekunden, zeigen „nicht verfügbar", wenn der Speicher
   gerade nicht antwortet
-- Soll-Ladeleistung und Soll-Entladeleistung lassen sich je Speicher setzen — **noch nicht an
-  echter Hardware getestet**, vor dem ersten Einsatz mit kleinem Wert prüfen (siehe
-  [docs/bekannte-luecken.md](docs/bekannte-luecken.md))
+- Soll-Ladeleistung und Soll-Entladeleistung lassen sich je Speicher setzen
 - Optionale HEMS-Anbindung: beim Einrichten eines Speichers lässt sich ein SkytechHEMS-Präfix
   hinterlegen (z. B. `acspeicher1`) — ab dann übersetzt die Integration die
   HEMS-Anforderungshelfer selbst laufend in Soll-Lade-/Entladeleistung, ohne dass dafür eine
   eigene Home-Assistant-Automation nötig ist. Leer lassen, wenn der Speicher nicht von
-  SkytechHEMS gesteuert wird — **ebenfalls noch nicht an echter Hardware getestet**
+  SkytechHEMS gesteuert wird
+
+  Erster Praxistest an einer echten Venus E 3.0: Ladezustand liest korrekt, Ist-Ladeleistung/
+  Ist-Entladeleistung zeigen noch `unknown` (Ursache offen), siehe
+  [docs/bekannte-luecken.md](docs/bekannte-luecken.md)
 
 ### Geändert
 
