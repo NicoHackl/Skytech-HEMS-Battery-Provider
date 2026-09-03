@@ -70,18 +70,34 @@ Setzen der Soll-Lade-/Entladeleistung funktionierten; danach zwei Auffälligkeit
   hatte. Da die HEMS-Anbindung viel häufiger sendet als der Poll, traf es `ES.SetMode` fast
   immer. Fix: `asyncio.Lock` in `adapters/marstek_udp.py`, serialisiert jetzt jeden
   Request-Antwort-Zyklus vollständig — Test `test_gleichzeitige_aufrufe_teilen_sich_nicht_die_antwort`.
-- **Offen, weiterhin nicht geraten:** `sensor.<prefix>_ist_ladeleistung`/`_ist_entladeleistung`
-  zeigten dauerhaft `unknown`, obwohl `sensor.<prefix>_ladezustand` (SoC) im selben Zeitraum
-  gültige Werte aus demselben `ES.GetStatus`-Aufruf zeigte. `bat_power` ist laut
-  Randyocean-Protokoll-Dump ein reguläres Feld dieser Antwort (Beispiel dort zeigt `bat_power: 0`
-  im Leerlauf) — auf der echten Anlage fehlt es im Ergebnis aber anscheinend, obwohl `bat_soc` im
-  selben Ergebnis vorhanden ist. Ob das am Firmwarestand der Venus E 3.0, an einem
-  Anlagenzustand (z. B. Standby) oder an einer noch unbekannten dritten Ursache liegt, ist
-  unklar — dafür fehlt die rohe Antwort. `read()` loggt eine fehlende `bat_power` deshalb jetzt
-  auf Debug-Level mit der vollständigen Rohantwort (`adapters/marstek_udp.py`). **Nächster
-  Schritt:** Log-Level für `custom_components.battery_bridge` auf `debug` stellen, eine Zeit
-  über verschiedene Anlagenzustände (Laden/Entladen/Standby) laufen lassen, Rohantwort
-  auswerten — erst danach hier eintragen, was tatsächlich der Fall ist.
+  **Live bestätigt** (03.09.2026, nach Update + Neustart): Coordinator-Polls laufen seither
+  durchgehend mit `success: True`, die HEMS-Anbindung hat direkt nach dem Neustart erfolgreich
+  auf `number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung` geschrieben (auf `0.0`, ohne
+  Fehler im Log) — vorher timeoutete genau dieser Aufruf praktisch immer.
+- **Bestätigt per Debug-Log, weiterhin ungelöst:** `sensor.<prefix>_ist_ladeleistung`/
+  `_ist_entladeleistung` zeigen dauerhaft `unknown`. Rohantwort von `ES.GetStatus` auf der
+  echten Anlage (03.09.2026, mehrere Polls hintereinander, alle `success: True`):
+  ```json
+  {"id": 0, "bat_soc": 85, "bat_cap": 5120, "pv_power": 0, "ongrid_power": 0,
+   "offgrid_power": 0, "total_pv_energy": 0, "total_grid_output_energy": 26340,
+   "total_grid_input_energy": 34452, "total_load_energy": 0}
+  ```
+  Das Feld `bat_power` fehlt **komplett** — kein Parsing-Fehler, das Gerät liefert es schlicht
+  nicht mit. `Bat.GetStatus` (separat geprüft) hat laut Protokoll-Dump ohnehin kein
+  Leistungsfeld (nur SoC, Lade-/Entladeflags, Temperatur, Kapazität). `EM.GetStatus` liefert nur
+  CT-/Netzmessung (`a_power`/`b_power`/`c_power`/`total_power`), keine Batterieleistung. Damit
+  ist `ES.GetStatus.bat_power` laut verfügbarer Doku der einzige Weg zur Ist-Leistung — und genau
+  der fehlt hier.
+
+  **Auffällig, nur Hypothese, nicht verifiziert:** `bat_cap: 5120` ist exakt das Doppelte der in
+  den Referenz-Beispielen dokumentierten Standard-Venus-E-Kapazität (~2560). Passt zu einem
+  Zwei-Batterie-Stack — möglich, dass `id: 0` in `ES.GetStatus`/`ES.SetMode` nur einen
+  Aggregatwert ohne `bat_power` liefert, während einzelne Packs (`id: 1`/`id: 2`?) es hätten.
+  Keine der vier Community-Quellen dokumentiert Mehrfach-Pack-Verhalten für `ES.GetStatus`, das
+  ist reine Beobachtung aus einer Zahl, keine bestätigte Ursache. **Nicht ungeprüft umsetzen** —
+  vor einer Code-Änderung entweder bei Marstek/den Community-Projekten nachfragen oder gezielt
+  mit anderen `id`-Werten gegen die echte Anlage testen (`read()` loggt die Rohantwort bei
+  fehlendem `bat_power` weiterhin auf Debug-Level, siehe `adapters/marstek_udp.py`).
 
 ## Stolpersteine
 
