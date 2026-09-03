@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
@@ -82,3 +83,33 @@ async def test_soll_entladeleistung_fehler_wird_nicht_still_geschluckt(
 
     # Fehlgeschlagener Schreibvorgang darf den zuletzt bekannten Stand nicht überschreiben.
     assert hass.states.get(entity_ids["soll_entladeleistung"]).state == "0.0"
+
+
+async def test_soll_leistung_fehler_verbirgt_technische_details(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression: Die HomeAssistantError zeigt keine Marstek-internen Details — die stehen
+    stattdessen vollständig im Log (Regel 12, docs/nutzertexte.md)."""
+    technical_detail = "Marstek 127.0.0.1:30000 antwortet nach 3 Versuchen nicht auf ES.SetMode."
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_discharge_power",
+        AsyncMock(side_effect=StorageAdapterError(technical_detail)),
+    )
+    _entry, entity_ids = await _setup_loaded_entry(hass, monkeypatch)
+
+    with caplog.at_level(logging.ERROR), pytest.raises(HomeAssistantError) as exc_info:
+        await hass.services.async_call(
+            "number",
+            "set_value",
+            {"entity_id": entity_ids["soll_entladeleistung"], "value": 750},
+            blocking=True,
+        )
+
+    user_message = str(exc_info.value)
+    assert "127.0.0.1" not in user_message
+    assert "30000" not in user_message
+    assert "ES.SetMode" not in user_message
+    assert technical_detail in caplog.text

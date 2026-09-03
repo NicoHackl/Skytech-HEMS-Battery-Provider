@@ -8,6 +8,7 @@ docs/bekannte-luecken.md.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -27,6 +28,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .adapters.base import StorageAdapter, StorageAdapterError
 from .const import CONF_MANUFACTURER, DOMAIN, MANUFACTURER_NAMES
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 # Obergrenze aus der Community-Dokumentation der Marstek Local API (Passive-Mode-Range laut
 # jaapp/ha-marstek-local-api: -10000..10000 W gesamt) — keine geräte-spezifisch geprüfte
@@ -111,11 +114,21 @@ class BatteryBridgeNumber(CoordinatorEntity[BatteryBridgeCoordinator], NumberEnt
         self._attr_native_value = 0.0
 
     async def async_set_native_value(self, value: float) -> None:
-        """Neuen Sollwert an den Adapter senden — meldet Fehler, statt still zu scheitern."""
+        """Neuen Sollwert an den Adapter senden.
+
+        Meldet einen Fehlschlag als verständliche `HomeAssistantError`, statt still zu
+        scheitern — aber ohne die technischen Details aus `StorageAdapterError` (Geräteadresse,
+        Protokoll-Interna) an den Nutzer durchzureichen (Regel 12, docs/nutzertexte.md). Die
+        technischen Details gehen dabei nicht verloren, sie stehen vollständig im Log.
+        """
         try:
             await self.entity_description.write_fn(self.coordinator.adapter, value)
         except StorageAdapterError as exc:
-            raise HomeAssistantError(str(exc)) from exc
+            _LOGGER.error("Sollwert für %s konnte nicht gesetzt werden: %s", self.entity_id, exc)
+            raise HomeAssistantError(
+                "Der neue Sollwert konnte nicht an den Speicher übertragen werden. "
+                "Bitte erneut versuchen."
+            ) from exc
 
         self._attr_native_value = value
         self.async_write_ha_state()

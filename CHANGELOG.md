@@ -32,6 +32,12 @@ Datei angefasst wurde.
 - Frontend-Vorlage entfernt — diese Integration hat keine eigene Web-Oberfläche, Entities laufen
   über die Home-Assistant-Standard-UI
 
+### Behoben
+
+- Schlug das Setzen einer Soll-Lade-/Entladeleistung fehl, zeigte die Meldung bisher technische
+  Details (Geräteadresse, interne Protokoll-Angaben). Jetzt ein verständlicher, allgemeiner
+  Hinweis; die technischen Details stehen weiterhin vollständig im Log.
+
 ## [0.1.0] — 02.09.2026
 
 ### Hinzugefügt
