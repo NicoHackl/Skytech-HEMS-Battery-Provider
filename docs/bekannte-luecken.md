@@ -114,6 +114,11 @@ Setzen der Soll-Lade-/Entladeleistung funktionierten; danach zwei Auffälligkeit
   ginge in dieser Leistung unter; vor produktivem Vertrauen in den Wert an echter Hardware über
   eine volle Lade-/Entladephase mit der Marstek-App gegenprüfen.
 
+  **Erster Cross-Check nach Deploy (03.09.2026, 21:58):** `sensor.ac_speicher_1_ist_entladeleistung`
+  zeigte 404 W, das unabhängig vom Shelly-Stromzähler gemessene `sensor.ac_speicher_1_leistung`
+  im selben Moment −408,6 W — Größenordnung und Richtung passen zusammen. Kein Beweis über eine
+  volle Phase, aber ein starkes erstes Indiz, dass die Vorzeichenannahme stimmt.
+
 ## Speicher springt unter HEMS-Steuerung (gemeldet 03.09.2026)
 
 User-Beobachtung: Unter der HEMS-Anbindung dieser Integration „springt" der Speicher ständig —
@@ -162,6 +167,16 @@ Dinge, die schon einmal Zeit gekostet haben:
   unverändert in eine `HomeAssistantError` wandern. Genau das ist `number.py` passiert (siehe
   CHANGELOG.md). Ein künftiger zweiter Adapter (D-006) muss dasselbe Muster einhalten: technisch
   loggen, dann eine eigene Nutzermeldung bauen — nie `str(exc)` direkt an eine HA-Exception geben.
+- **`number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung` zeigen nicht, was die
+  HEMS-Anbindung gerade wirklich sendet.** `hems_bridge.py` schreibt direkt auf den Adapter
+  (`adapter.write_charge_power()`/`write_discharge_power()`), nie über die Number-Entity selbst
+  (`async_set_native_value()`) — deshalb bleibt `_attr_native_value` der Entity unverändert bei
+  ihrem Startwert `0.0` bzw. beim letzten manuell über die Entity gesetzten Wert, während der
+  Speicher tatsächlich einen ganz anderen, von HEMS vorgegebenen Sollwert bekommt (beobachtet
+  03.09.2026: Entity zeigte `0.0`, während die Anlage mit −417 W entlud). Kein Bug im Sinne von
+  falschem Verhalten — Adapter-Aufruf und Entity-Anzeige sind schlicht zwei getrennte Pfade —
+  aber irreführend für jeden, der aus der Entity-Anzeige den aktuellen Sollwert abliest, solange
+  eine HEMS-Anbindung aktiv ist. Noch nicht behoben, kein gemeldeter Auftrag dafür.
 
 ## Offene Bugs
 
