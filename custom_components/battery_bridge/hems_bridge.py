@@ -9,9 +9,13 @@ sich nichts: die Integration bleibt ein reiner Entity-Lieferant (D-009).
 
 Wichtig: `write_charge_power()`/`write_discharge_power()` sind bei der Marstek-UDP-Anbindung kein
 additives Zwei-Kanal-Signal, sondern steuern denselben einzigen Passive-Mode-Sollwert — der
-zuletzt gesendete Aufruf gewinnt vollständig (siehe `adapters/marstek_udp.py`). Jeder Sync setzt
-deshalb zuerst die inaktive Richtung auf 0, danach erst die aktive Richtung — nie umgekehrt.
-Details und Begründung: docs/adr/D-009-hems-anbindung-in-integration.md.
+zuletzt gesendete Aufruf gewinnt vollständig (siehe `adapters/marstek_udp.py`). Genau deshalb
+wird die inaktive Richtung nur beim tatsächlichen Wechsel der Betriebsart einmal auf 0 gesetzt,
+nie bei jedem Sync: Bei unverändertem Modus liefe sonst jede reine Leistungsanpassung über zwei
+Befehle auf **dasselbe** Feld — erst 0, dann der neue Wert — und am Speicher käme das als
+kurzzeitiger Sprung auf 0 W an, obwohl nur der Betrag der bestehenden Richtung sich geändert hat
+(siehe `docs/bekannte-luecken.md`, Abschnitt „Speicher springt"). Details und Begründung zur
+HEMS-Anbindung insgesamt: docs/adr/D-009-hems-anbindung-in-integration.md.
 """
 
 from __future__ import annotations
@@ -48,6 +52,11 @@ class HemsBridge:
         self._mode_entity_id = f"input_select.ems_{hems_entity_prefix}_anforderung_betriebsart"
         self._unsub: Callable[[], None] | None = None
         self._warned_missing = False
+        # Zuletzt erfolgreich angewendete Betriebsart — nur bei einem Wechsel gegenüber diesem
+        # Wert wird die inaktive Richtung auf 0 gesetzt (siehe Moduldoc). `None` vor dem ersten
+        # erfolgreichen Sync erzwingt beim allerersten Durchlauf immer den Zero-Schritt, auch
+        # wenn die Zielrichtung zufällig schon beim vorherigen Geräte-Neustart aktiv war.
+        self._last_applied_mode: str | None = None
 
     async def async_setup(self) -> None:
         """Auf beide HEMS-Helfer hören und den aktuell gesetzten Wert einmal übernehmen."""
@@ -87,13 +96,23 @@ class HemsBridge:
 
         leistung_w = _parse_leistung(power_state.state)
         adapter = self._coordinator.adapter
+        mode = mode_state.state
+        # Nur bei einem tatsächlichen Wechsel der Betriebsart gegenüber dem letzten erfolgreichen
+        # Sync die inaktive Richtung zurücksetzen — sonst sendet jede reine Leistungsanpassung
+        # bei unveränderter Richtung einen unnötigen Zero-Befehl auf dasselbe Passive-Mode-Feld
+        # (siehe Moduldoc). Bei HEMS-Anforderungen, die sich mehrmals pro Sekunde ändern, macht
+        # genau das den Unterschied zwischen einer sanften Anpassung und einem sichtbaren Sprung
+        # am Speicher.
+        mode_changed = mode != self._last_applied_mode
 
         try:
-            if mode_state.state == _MODE_LADEN:
-                await adapter.write_discharge_power(0)
+            if mode == _MODE_LADEN:
+                if mode_changed:
+                    await adapter.write_discharge_power(0)
                 await adapter.write_charge_power(leistung_w)
-            elif mode_state.state == _MODE_ENTLADEN:
-                await adapter.write_charge_power(0)
+            elif mode == _MODE_ENTLADEN:
+                if mode_changed:
+                    await adapter.write_charge_power(0)
                 await adapter.write_discharge_power(leistung_w)
             else:
                 # "standby" und jeder unerwartete Wert: sicherer Fall, beide Richtungen auf 0.
@@ -105,6 +124,7 @@ class HemsBridge:
             )
             return
 
+        self._last_applied_mode = mode
         await self._coordinator.async_request_refresh()
 
 

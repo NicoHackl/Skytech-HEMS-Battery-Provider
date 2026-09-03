@@ -74,8 +74,8 @@ Setzen der Soll-Lade-/Entladeleistung funktionierten; danach zwei Auffälligkeit
   durchgehend mit `success: True`, die HEMS-Anbindung hat direkt nach dem Neustart erfolgreich
   auf `number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung` geschrieben (auf `0.0`, ohne
   Fehler im Log) — vorher timeoutete genau dieser Aufruf praktisch immer.
-- **Bestätigt per Debug-Log, weiterhin ungelöst:** `sensor.<prefix>_ist_ladeleistung`/
-  `_ist_entladeleistung` zeigen dauerhaft `unknown`. Rohantwort von `ES.GetStatus` auf der
+- **Bestätigt per Debug-Log, Ersatzwert seit 03.09.2026 im Einsatz:** `sensor.<prefix>_ist_ladeleistung`/
+  `_ist_entladeleistung` zeigten dauerhaft `unknown`. Rohantwort von `ES.GetStatus` auf der
   echten Anlage (03.09.2026, mehrere Polls hintereinander, alle `success: True`):
   ```json
   {"id": 0, "bat_soc": 85, "bat_cap": 5120, "pv_power": 0, "ongrid_power": 0,
@@ -94,10 +94,63 @@ Setzen der Soll-Lade-/Entladeleistung funktionierten; danach zwei Auffälligkeit
   Zwei-Batterie-Stack — möglich, dass `id: 0` in `ES.GetStatus`/`ES.SetMode` nur einen
   Aggregatwert ohne `bat_power` liefert, während einzelne Packs (`id: 1`/`id: 2`?) es hätten.
   Keine der vier Community-Quellen dokumentiert Mehrfach-Pack-Verhalten für `ES.GetStatus`, das
-  ist reine Beobachtung aus einer Zahl, keine bestätigte Ursache. **Nicht ungeprüft umsetzen** —
-  vor einer Code-Änderung entweder bei Marstek/den Community-Projekten nachfragen oder gezielt
-  mit anderen `id`-Werten gegen die echte Anlage testen (`read()` loggt die Rohantwort bei
-  fehlendem `bat_power` weiterhin auf Debug-Level, siehe `adapters/marstek_udp.py`).
+  ist reine Beobachtung aus einer Zahl, keine bestätigte Ursache. Für eine Code-Änderung dazu
+  (z. B. andere `id`-Werte testen) weiterhin bei Marstek/den Community-Projekten nachfragen statt
+  ungeprüft umzusetzen.
+
+  **Ersatzwert eingebaut:** Der User hat händisch `ES.GetMode` abgefragt (siehe
+  `terminal_ausschnitt.txt`) — auch dort fehlt `bat_power`, aber `ongrid_power`/`offgrid_power`
+  sind vorhanden, genau wie in `ES.GetStatus`. Hypothese des Users, hier übernommen: `ongrid_power`
+  ist an dieser Anlage (kein PV-Eingang direkt am Speicher, `pv_power` durchgängig 0) die
+  tatsächliche Wirkleistung des Geräts auf der Netzseite — für ein reines AC-Batteriegerät ohne
+  eigenen PV-Eingang praktisch identisch mit der Batterieleistung. Vorzeichen umgekehrt zu
+  `bat_power`: positiv = Einspeisung (entladen), negativ = Bezug (laden). `read()` in
+  `adapters/marstek_udp.py` nutzt das jetzt als Fallback, wenn `bat_power` fehlt (negiert, bevor
+  es in dieselbe Aufteilung wie `bat_power` geht) — Tests:
+  `test_read_nutzt_ongrid_power_wenn_bat_power_fehlt`,
+  `test_read_ongrid_power_positiv_ergibt_entladeleistung`,
+  `test_read_ignoriert_ongrid_power_wenn_bat_power_vorhanden`. **Weiterhin nicht offiziell
+  bestätigt** — deckt nur den Netz-Anteil ab, ein aktiver Offgrid-/Backup-Kreis (`offgrid_power`)
+  ginge in dieser Leistung unter; vor produktivem Vertrauen in den Wert an echter Hardware über
+  eine volle Lade-/Entladephase mit der Marstek-App gegenprüfen.
+
+## Speicher springt unter HEMS-Steuerung (gemeldet 03.09.2026)
+
+User-Beobachtung: Unter der HEMS-Anbindung dieser Integration „springt" der Speicher ständig —
+über die alte Modbus-Automation (`script.venus_e_1_steuerung`, `mode: queued`, direkt auf zwei
+unabhängige Ladeleistung-/Entladeleistung-Modbus-Register geschrieben) lief dieselbe, von HEMS
+berechnete Anforderung „relativ gut". Ursache liegt nicht an HEMS' Anforderungswert selbst — der
+ist nachweislich unruhig (Logbuch zeigt `input_select.ems_<prefix>_anforderung_betriebsart` über
+Minuten hinweg im 3–30-Sekunden-Takt zwischen `entladen`/`standby` wechselnd, `input_number...
+_anforderung_leistung_w` ähnlich volatil) — Ursache ist, wie `hems_bridge.py` bislang darauf
+reagierte, kombiniert mit einer Eigenheit des Marstek-Schreibpfads:
+
+`write_charge_power()`/`write_discharge_power()` sind bei Passive-Mode **kein** additives
+Zwei-Kanal-Signal wie die zwei separaten Modbus-Register der alten Automation, sondern derselbe
+einzige `passive_cfg.power`-Sollwert (siehe `adapters/marstek_udp.py`) — der zuletzt gesendete
+Aufruf gewinnt vollständig. `hems_bridge._async_sync()` hat bisher bei **jedem** Sync zuerst die
+inaktive Richtung auf 0 gesetzt, bevor die aktive Richtung geschrieben wurde — auch dann, wenn
+sich nur der Betrag der ohnehin aktiven Richtung änderte und die Betriebsart gar nicht wechselte.
+Bei einer nur alle paar Sekunden neu berechneten Anforderung heißt das: zwei Befehle
+hintereinander auf **dasselbe** Gerätefeld — erst 0, dann der neue Zielwert — bei jeder einzelnen
+Anpassung. Am Speicher kam das als kurzer, wiederholter Sprung auf 0 W an, nicht als sanfte
+Anpassung.
+
+**Fix:** `hems_bridge.py` merkt sich jetzt die zuletzt erfolgreich angewendete Betriebsart und
+setzt die inaktive Richtung nur noch bei einem tatsächlichen Wechsel auf 0 — bleibt die
+Betriebsart gleich, geht nur noch die aktive Richtung mit dem neuen Wert raus, ohne
+Zero-Zwischenschritt. Tests:
+`test_gleichbleibende_betriebsart_setzt_inaktive_richtung_nicht_erneut_auf_null`,
+`test_wechsel_der_betriebsart_setzt_inaktive_richtung_erneut_auf_null`,
+`test_nach_fehlgeschlagenem_wechsel_wird_beim_naechsten_sync_erneut_genullt`.
+
+**Nicht behoben, separate Beobachtung:** Dass die HEMS-Anforderung selbst (Betriebsart **und**
+Leistung) so häufig kippt, ist unabhängig von dieser Integration — das ist der rohe Wert, den
+auch die alte Modbus-Automation empfangen hat. Ob das am Regelverhalten des SkytechHEMS-Add-ons
+für die Geräteklasse `battery` liegt (kein sichtbares HA-`script`/`automation` dafür gefunden —
+`script.ems_regler_berechnen` behandelt nur Heizstab/Wallbox/Heizlüfter, nicht den Speicher; die
+Berechnung für `battery` läuft demnach im Python-Add-on selbst) oder eine andere Ursache hat, ist
+außerhalb dieses Repos zu klären.
 
 ## Stolpersteine
 
