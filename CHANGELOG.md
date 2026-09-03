@@ -42,6 +42,11 @@ Datei angefasst wurde.
 - Schlug das Setzen einer Soll-Lade-/Entladeleistung fehl, zeigte die Meldung bisher technische
   Details (Geräteadresse, interne Protokoll-Angaben). Jetzt ein verständlicher, allgemeiner
   Hinweis; die technischen Details stehen weiterhin vollständig im Log.
+- Setzte die HEMS-Anbindung (oder ein manuelles Setzen der Soll-Lade-/Entladeleistung) fast
+  immer den Sollwert nicht am Speicher, weil sich ein laufender Lesevorgang (alle 5 Sekunden)
+  und ein gleichzeitiger Schreibvorgang der HEMS-Anbindung gegenseitig die Geräteantwort
+  wegschnappen konnten — beide teilten sich dieselbe Warteschlange ohne Absicherung. Anfragen
+  an den Speicher laufen jetzt nacheinander ab, nie mehr gleichzeitig.
 
 ## [0.1.0] — 02.09.2026
 

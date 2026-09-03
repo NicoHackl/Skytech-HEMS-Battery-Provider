@@ -59,17 +59,21 @@ Modbus-Automation (`script.venus_e_1_steuerung`, live in der Zielanlage beobacht
 aus `script.hems_postskript`).
 
 **Status: in Arbeit.** Die eingebaute HEMS-Anbindung (`hems_bridge.py`, D-009) ist fertig und
-getestet — offen ist nur noch die eigentliche Inbetriebnahme an der echten Anlage. Reihenfolge
-ist bindend, jeder Schritt setzt den vorherigen voraus. Schritte mit „manuell, überwacht" sind
-bewusst kein Automatismus — die Hardware-Verifikation macht der User selbst an der echten Anlage.
+getestet. Die Inbetriebnahme an der echten Anlage läuft (Schritte 1, 2 und 5 sind seit
+03.09.2026 erledigt — Entry „AC Speicher 1" mit HEMS-Präfix `acspeicher1` läuft produktiv),
+dabei kam Schritt 3 aber ins Stocken (siehe [bekannte-luecken.md](bekannte-luecken.md), Abschnitt
+„An echter Venus E 3.0 beobachtet") und deckte zusätzlich einen Nebenläufigkeits-Bug auf, der
+Schritt 4 bislang verfälscht hat. Reihenfolge ist bindend, jeder Schritt setzt den vorherigen
+voraus. Schritte mit „manuell, überwacht" sind bewusst kein Automatismus — die
+Hardware-Verifikation macht der User selbst an der echten Anlage.
 
 | # | Schritt | Status | Verweis |
 |---|---|---|---|
-| 1 | Integration deployen: HACS custom repository `NicoHackl/Skytech-HEMS-Battery-Provider` oder manuell nach `custom_components/battery_bridge` kopieren, HA neu starten | offen | [README.md](../README.md) |
-| 2 | Config-Entry für den Marstek-Speicher anlegen (Einstellungen → Geräte & Dienste), Host/Port eintragen, HEMS-Präfix-Feld zunächst **leer lassen** — Verbindungstest läuft automatisch | offen | |
-| 3 | **Manuell, überwacht:** Lese-Werte (SoC, Ist-Lade-/Entladeleistung) über eine volle Lade-/Entlade-/Standby-Phase gegen die bisherigen Sensoren plausibilisieren, insbesondere `bat_power`-Vorzeichen bestätigen | offen | [bekannte-luecken.md](bekannte-luecken.md) |
-| 4 | **Manuell, überwacht:** Schreibtest mit kleinem Sollwert (z. B. 100 W) auf `number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung`, Reaktion am Gerät/in der Marstek-App beobachten, danach zurück auf 0 | offen | [bekannte-luecken.md](bekannte-luecken.md) |
-| 5 | Im Config-Entry das HEMS-Präfix eintragen (z. B. `acspeicher1`) — ab hier übersetzt `hems_bridge.py` selbst laufend, keine weitere Einrichtung nötig | offen | [api-referenz.md](api-referenz.md) |
+| 1 | Integration deployen: HACS custom repository `NicoHackl/Skytech-HEMS-Battery-Provider` oder manuell nach `custom_components/battery_bridge` kopieren, HA neu starten | fertig (03.09.2026) | [README.md](../README.md) |
+| 2 | Config-Entry für den Marstek-Speicher anlegen (Einstellungen → Geräte & Dienste), Host/Port eintragen, HEMS-Präfix-Feld zunächst **leer lassen** — Verbindungstest läuft automatisch | fertig (03.09.2026) | |
+| 3 | **Manuell, überwacht:** Lese-Werte (SoC, Ist-Lade-/Entladeleistung) über eine volle Lade-/Entlade-/Standby-Phase gegen die bisherigen Sensoren plausibilisieren, insbesondere `bat_power`-Vorzeichen bestätigen | in Arbeit — SoC bestätigt, Ist-Lade-/Entladeleistung bislang durchgehend `unknown` (Ursache noch offen) | [bekannte-luecken.md](bekannte-luecken.md) |
+| 4 | **Manuell, überwacht:** Schreibtest mit kleinem Sollwert (z. B. 100 W) auf `number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung`, Reaktion am Gerät/in der Marstek-App beobachten, danach zurück auf 0 | in Arbeit — bisherige Fehlschläge auf einen jetzt behobenen Nebenläufigkeits-Bug zurückgeführt (siehe bekannte-luecken.md), Testlauf nach Update erneut fällig | [bekannte-luecken.md](bekannte-luecken.md) |
+| 5 | Im Config-Entry das HEMS-Präfix eintragen (z. B. `acspeicher1`) — ab hier übersetzt `hems_bridge.py` selbst laufend, keine weitere Einrichtung nötig | fertig (03.09.2026) | [api-referenz.md](api-referenz.md) |
 | 6 | HEMS-Gerätekonfiguration (im HEMS-Repo) auf die neuen Sensor-Entities umstellen | offen, **blockiert**: die tatsächlich live verwendeten Sensor-Entity-IDs für `acspeicher1` sind unbekannt — nicht raten, vor diesem Schritt am System klären | |
 | 7 | Bewährungsphase im Normalbetrieb (Dauer: User legt fest); `script.venus_e_1_steuerung` dabei nur aus dem `parallel`-Block von `script.hems_postskript` entfernen, nicht löschen (schneller Rollback bleibt möglich) | offen | |
 | 8 | Nach ausdrücklicher Freigabe: alte Modbus-Automation/-Integration entfernen | offen | |
