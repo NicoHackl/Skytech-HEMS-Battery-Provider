@@ -13,7 +13,7 @@ geprüft, nicht gegen die Absicht. Was hier „fertig" heißt, muss laufen.
 
 | Punkt | Status | Verweis |
 |---|---|---|
-| Lizenz festlegen | offen | [README.md](../README.md) |
+| Lizenz festlegen | fertig | [README.md](../README.md), [LICENSE](../LICENSE) |
 
 ### M1 — Lesezugriff auf einen Marstek-Speicher
 
