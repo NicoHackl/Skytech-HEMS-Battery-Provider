@@ -196,7 +196,7 @@ Schreibaufrufe, die sie auslöst, laufen über denselben unverifizierten Marstek
 | Frage | Betrifft | Blockiert |
 |---|---|---|
 | Löst ein Wechsel von `laden`/`entladen`/`standby` am Gerät tatsächlich die erwartete Richtung aus, in der von `hems_bridge.py` gewählten Reihenfolge (inaktiv zuerst auf 0)? | `hems_bridge.py: _async_sync()` | Aktivierung der HEMS-Anbindung an echter Hardware |
-| Solange die HEMS-Anbindung für einen Entry aktiv ist, überschreibt sie laufend die eigenen `number.*_soll_*`-Entities — manuelles Bedienen dieser Entities in diesem Zustand wird vom nächsten HEMS-Zyklus (Sekundentakt) sofort wieder verworfen. | `number.py` vs. `hems_bridge.py` | Kein Bug, aber überraschend, wenn nicht dokumentiert |
+| Solange die HEMS-Anbindung für einen Entry aktiv ist, überschreibt sie laufend die eigenen `number.*_soll_*`-Entities — manuelles Bedienen dieser Entities in diesem Zustand wird vom nächsten HEMS-Zyklus (Sekundentakt) sofort wieder verworfen. **Seit 0.4.0 gezielt vermeidbar:** `switch.<prefix>_hems_steuerung_aktiv` (D-011) ausschalten, bevor `number.*_soll_*` manuell bedient wird — steht nach dem nächsten Neustart wieder auf EIN. | `number.py` vs. `hems_bridge.py` | Kein Bug, aber überraschend, wenn nicht dokumentiert |
 
 ## Bewusst nicht umgesetzt
 

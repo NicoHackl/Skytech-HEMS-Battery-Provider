@@ -51,6 +51,11 @@
       "soll_entladeleistung": {
         "name": "Soll-Entladeleistung"
       }
+    },
+    "switch": {
+      "hems_steuerung_aktiv": {
+        "name": "HEMS-Steuerung"
+      }
     }
   }
 }
