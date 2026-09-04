@@ -9,6 +9,23 @@ Kategorien: `Hinzugefügt`, `Geändert`, `Veraltet`, `Entfernt`, `Behoben`, `Sic
 Einträge werden aus **Nutzersicht** formuliert — was sich für den Anwender ändert, nicht welche
 Datei angefasst wurde.
 
+## [0.3.0] — 04.09.2026
+
+### Geändert
+
+- Der in Home Assistant und HACS angezeigte Name lautet jetzt „Skytech HEMS Battery Provider"
+  statt „Battery Bridge" — nur der Anzeigename ändert sich, bestehende Speicher, Entities und
+  Einstellungen bleiben unverändert erhalten.
+
+### Hinzugefügt
+
+- Zwei neue Sensoren je Speicher mit aktiver HEMS-Anbindung: HEMS-Soll-Ladeleistung und
+  HEMS-Soll-Entladeleistung zeigen den Sollwert, den die Integration zuletzt tatsächlich an den
+  Speicher gesendet hat. Bisher ließ sich das nirgends ablesen, weil die HEMS-Anbindung direkt am
+  Adapter vorbei schreibt, ohne die bestehenden Soll-Leistungs-Entities zu berühren — siehe
+  [docs/bekannte-luecken.md](docs/bekannte-luecken.md). Nur sichtbar, wenn für den Speicher ein
+  SkytechHEMS-Präfix eingerichtet ist.
+
 ## [0.2.1] — 03.09.2026
 
 ### Behoben

@@ -16,12 +16,18 @@ Befehle auf **dasselbe** Feld — erst 0, dann der neue Wert — und am Speicher
 kurzzeitiger Sprung auf 0 W an, obwohl nur der Betrag der bestehenden Richtung sich geändert hat
 (siehe `docs/bekannte-luecken.md`, Abschnitt „Speicher springt"). Details und Begründung zur
 HEMS-Anbindung insgesamt: docs/adr/D-009-hems-anbindung-in-integration.md.
+
+`last_command` ist der öffentliche Beobachtungspunkt für `sensor.py`: der zuletzt *erfolgreich*
+gesendete Sollwert, unabhängig vom aktuellen Poll-Zustand des Coordinators. Schließt die in
+`docs/bekannte-luecken.md` beschriebene Lücke, dass `number.<prefix>_soll_*` nicht zeigt, was
+diese Anbindung tatsächlich sendet (die schreibt direkt am Adapter vorbei).
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from homeassistant.core import Event, HomeAssistant
@@ -41,6 +47,14 @@ _MODE_LADEN = "laden"
 _MODE_ENTLADEN = "entladen"
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HemsCommandState:
+    """Zuletzt erfolgreich an den Adapter gesendeter HEMS-Sollwert (Snapshot für `sensor.py`)."""
+
+    charge_power_w: float
+    discharge_power_w: float
+
+
 class HemsBridge:
     """Beobachtet die HEMS-Anforderungshelfer eines Präfixes, übersetzt sie live in Sollwerte."""
 
@@ -57,6 +71,15 @@ class HemsBridge:
         # erfolgreichen Sync erzwingt beim allerersten Durchlauf immer den Zero-Schritt, auch
         # wenn die Zielrichtung zufällig schon beim vorherigen Geräte-Neustart aktiv war.
         self._last_applied_mode: str | None = None
+        # Zuletzt erfolgreich gesendeter Sollwert, für `sensor.py` (siehe Moduldoc). `None` vor
+        # dem ersten erfolgreichen Sync — derselbe Leerzustand wie bei `_last_applied_mode`, nie
+        # eine geratene 0 vortäuschen.
+        self._last_command: HemsCommandState | None = None
+
+    @property
+    def last_command(self) -> HemsCommandState | None:
+        """Zuletzt erfolgreich an den Adapter gesendeter Sollwert, `None` vor dem ersten Sync."""
+        return self._last_command
 
     async def async_setup(self) -> None:
         """Auf beide HEMS-Helfer hören und den aktuell gesetzten Wert einmal übernehmen."""
@@ -110,14 +133,17 @@ class HemsBridge:
                 if mode_changed:
                     await adapter.write_discharge_power(0)
                 await adapter.write_charge_power(leistung_w)
+                command = HemsCommandState(charge_power_w=leistung_w, discharge_power_w=0.0)
             elif mode == _MODE_ENTLADEN:
                 if mode_changed:
                     await adapter.write_charge_power(0)
                 await adapter.write_discharge_power(leistung_w)
+                command = HemsCommandState(charge_power_w=0.0, discharge_power_w=leistung_w)
             else:
                 # "standby" und jeder unerwartete Wert: sicherer Fall, beide Richtungen auf 0.
                 await adapter.write_charge_power(0)
                 await adapter.write_discharge_power(0)
+                command = HemsCommandState(charge_power_w=0.0, discharge_power_w=0.0)
         except StorageAdapterError as exc:
             _LOGGER.error(
                 "HEMS-Anbindung (%s) konnte den Sollwert nicht setzen: %s", self._prefix, exc
@@ -125,6 +151,7 @@ class HemsBridge:
             return
 
         self._last_applied_mode = mode
+        self._last_command = command
         await self._coordinator.async_request_refresh()
 
 

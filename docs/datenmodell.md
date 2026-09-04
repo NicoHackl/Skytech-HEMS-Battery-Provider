@@ -27,6 +27,21 @@ derselbe Entry bestehen, es entsteht kein doppelter.
 | `available` | `bool` | ja | Letzte Abfrage erfolgreich |
 | `last_update` | `datetime` | ja | Zeitstempel der letzten gültigen Antwort |
 
+`HemsCommandState` (`hems_bridge.py`), Snapshot des zuletzt erfolgreich an den Adapter gesendeten
+HEMS-Sollwerts — **andere Herkunft als `StorageState`**: nicht vom Adapter-Poll gelesen, sondern
+von der HEMS-Anbindung selbst gehalten, deshalb eine eigene, kleinere Dataclass statt eines
+weiteren `StorageState`-Felds:
+
+| Feld | Typ | Pflicht | Bedeutung |
+|---|---|---|---|
+| `charge_power_w` | `float` | ja | Zuletzt gesendete Ladeleistung ≥ 0 |
+| `discharge_power_w` | `float` | ja | Zuletzt gesendete Entladeleistung ≥ 0 |
+
+`HemsBridge.last_command` ist `None`, solange noch kein Sync erfolgreich war (dieselbe
+Leerzustand-Konvention wie bei `StorageState`-Feldern: nie eine geratene 0 vortäuschen). Speist
+die Sensoren `sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` — nur
+vorhanden, wenn der Entry ein HEMS-Präfix hat.
+
 ## Datenverträge
 
 - `None` bedeutet „nicht verfügbar" (ungültige/fehlgeschlagene Abfrage), `0` bedeutet eine

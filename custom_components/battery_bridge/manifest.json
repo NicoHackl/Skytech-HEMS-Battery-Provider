@@ -1,6 +1,6 @@
 {
   "domain": "battery_bridge",
-  "name": "Battery Bridge",
+  "name": "Skytech HEMS Battery Provider",
   "codeowners": ["@NicoHackl"],
   "config_flow": true,
   "documentation": "https://github.com/NicoHackl/Skytech-HEMS-Battery-Provider",
@@ -8,5 +8,5 @@
   "integration_type": "device",
   "iot_class": "local_polling",
   "requirements": [],
-  "version": "0.2.1"
+  "version": "0.3.0"
 }

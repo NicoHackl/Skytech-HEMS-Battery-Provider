@@ -1,4 +1,4 @@
-"""sensor.py — SoC, Ist-Ladeleistung, Ist-Entladeleistung je Speicher-Instanz."""
+"""sensor.py — SoC, Ist-/HEMS-Soll-Ladeleistung, Ist-/HEMS-Soll-Entladeleistung je Speicher."""
 
 from __future__ import annotations
 
@@ -17,8 +17,9 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_MANUFACTURER, DOMAIN, MANUFACTURER_NAMES
+from .const import CONF_HEMS_ENTITY_PREFIX, CONF_MANUFACTURER, DOMAIN, MANUFACTURER_NAMES
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
+from .hems_bridge import HemsCommandState
 from .models import StorageState
 
 
@@ -57,17 +58,52 @@ SENSOR_DESCRIPTIONS: tuple[BatteryBridgeSensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class BatteryBridgeHemsSensorDescription(SensorEntityDescription):
+    """Wie `BatteryBridgeSensorDescription`, aber Quelle ist `HemsCommandState`, nicht
+    `StorageState` — der Wert kommt von der HEMS-Anbindung, nicht vom Adapter-Poll."""
+
+    value_fn: Callable[[HemsCommandState], float | None]
+
+
+HEMS_SENSOR_DESCRIPTIONS: tuple[BatteryBridgeHemsSensorDescription, ...] = (
+    BatteryBridgeHemsSensorDescription(
+        key="hems_soll_ladeleistung",
+        translation_key="hems_soll_ladeleistung",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda command: command.charge_power_w,
+    ),
+    BatteryBridgeHemsSensorDescription(
+        key="hems_soll_entladeleistung",
+        translation_key="hems_soll_entladeleistung",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda command: command.discharge_power_w,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: BatteryBridgeConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Die drei Lese-Sensoren für diesen Entry anlegen."""
+    """Die Lese-Sensoren für diesen Entry anlegen — die beiden HEMS-Sollwert-Sensoren nur, wenn
+    für diesen Speicher überhaupt eine HEMS-Anbindung eingerichtet ist (sonst gäbe es nie einen
+    Wert dafür, siehe `hems_bridge.py`)."""
     coordinator = entry.runtime_data
-    async_add_entities(
-        BatteryBridgeSensor(coordinator, entry, description)
-        for description in SENSOR_DESCRIPTIONS
-    )
+    entities: list[SensorEntity] = [
+        BatteryBridgeSensor(coordinator, entry, description) for description in SENSOR_DESCRIPTIONS
+    ]
+    if entry.data.get(CONF_HEMS_ENTITY_PREFIX):
+        entities.extend(
+            BatteryBridgeHemsCommandSensor(coordinator, entry, description)
+            for description in HEMS_SENSOR_DESCRIPTIONS
+        )
+    async_add_entities(entities)
 
 
 class BatteryBridgeSensor(CoordinatorEntity[BatteryBridgeCoordinator], SensorEntity):
@@ -103,3 +139,50 @@ class BatteryBridgeSensor(CoordinatorEntity[BatteryBridgeCoordinator], SensorEnt
     @property
     def native_value(self) -> float | None:
         return self.entity_description.value_fn(self.coordinator.data)
+
+
+class BatteryBridgeHemsCommandSensor(CoordinatorEntity[BatteryBridgeCoordinator], SensorEntity):
+    """Zeigt den Sollwert, den die HEMS-Anbindung zuletzt erfolgreich an den Adapter gesendet
+    hat — schließt die in docs/bekannte-luecken.md dokumentierte Lücke, dass
+    `number.<prefix>_soll_*` das nicht abbildet, weil `hems_bridge.py` am Adapter vorbeischreibt.
+    """
+
+    entity_description: BatteryBridgeHemsSensorDescription
+    _attr_has_entity_name = True
+    _attr_assumed_state = True  # kein Read-Pfad zurück zum Gerät, siehe number.py.
+
+    def __init__(
+        self,
+        coordinator: BatteryBridgeCoordinator,
+        entry: BatteryBridgeConfigEntry,
+        description: BatteryBridgeHemsSensorDescription,
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        device_id = entry.unique_id or entry.entry_id
+        self._attr_unique_id = f"{device_id}_{description.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            name=entry.title,
+            manufacturer=MANUFACTURER_NAMES.get(
+                entry.data[CONF_MANUFACTURER], entry.data[CONF_MANUFACTURER]
+            ),
+        )
+
+    @property
+    def available(self) -> bool:
+        # Bewusst unabhängig vom Poll-Erfolg des Coordinators (super().available/data.available):
+        # ein Lesefehler vom Gerät soll den zuletzt gesendeten HEMS-Sollwert nicht verschwinden
+        # lassen. Erst verfügbar, sobald die HEMS-Anbindung mindestens einmal erfolgreich
+        # geschrieben hat.
+        return self.coordinator.hems_bridge is not None and (
+            self.coordinator.hems_bridge.last_command is not None
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        hems_bridge = self.coordinator.hems_bridge
+        last_command = hems_bridge.last_command if hems_bridge else None
+        if last_command is None:
+            return None
+        return self.entity_description.value_fn(last_command)
