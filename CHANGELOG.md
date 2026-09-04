@@ -18,6 +18,16 @@ Datei angefasst wurde.
 
 - Lizenz festgelegt: MIT.
 
+### Behoben
+
+- HEMS-Anbindung konnte den Speicher unbemerkt aus dem Sollwert fallen lassen: Blieb die
+  HEMS-Anforderung mehrere Minuten unverändert (z. B. konstant 2500 W), sendete die Integration
+  nichts mehr nach — der Speicher fiel nach 5 Minuten aus eigener Sicherheitslogik zurück in
+  seinen vorherigen Modus und lud/entlud nicht mehr, obwohl die Anzeige weiterhin den zuletzt
+  gesendeten Sollwert zeigte. Aus-/Einschalten der HEMS-Steuerung half jeweils nur vorübergehend.
+  Die HEMS-Anbindung sendet den aktuellen Sollwert jetzt zusätzlich alle 60 Sekunden erneut, auch
+  ohne Änderung der HEMS-Anforderung — siehe [docs/bekannte-luecken.md](docs/bekannte-luecken.md).
+
 ## [0.4.0] — 04.09.2026
 
 ### Hinzugefügt

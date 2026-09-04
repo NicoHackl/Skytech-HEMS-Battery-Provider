@@ -32,3 +32,9 @@ MARSTEK_UDP_DEFAULT_PORT: Final = 30000
 MARSTEK_UDP_PORT_RANGE: Final = (1, 65535)
 
 DEFAULT_UPDATE_INTERVAL: Final = timedelta(seconds=5)
+
+# Keep-Alive-Takt der HEMS-Anbindung (hems_bridge.py, D-012): deutlich unter dem
+# Marstek-Passive-Mode-Watchdog `_PASSIVE_MODE_DURATION_S` (300 s, adapters/marstek_udp.py) —
+# sonst würde ein Gerät-Timeout die Sicherheitsmarge komplett aufbrauchen, bevor der nächste
+# Keep-Alive überhaupt drankäme.
+HEMS_KEEPALIVE_INTERVAL: Final = timedelta(seconds=60)

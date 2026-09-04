@@ -19,8 +19,11 @@ wird ungeprüft an eine echte Anlage gesendet**, bevor das hier abgehakt ist:
 | Frage | Betrifft | Blockiert |
 |---|---|---|
 | Sendet `write_charge_power`/`write_discharge_power` das richtige Vorzeichen? (`power` negativ = laden, positiv = entladen, aus zwei Quellen übereinstimmend übernommen — siehe unten) | `adapters/marstek_udp.py: _set_passive_power()` | Produktiver Einsatz von M2 |
-| Fällt das Gerät nach `cd_time` (300 s) tatsächlich in den vorherigen Modus zurück, wenn kein neuer Sollwert kommt? (Sicherheitsannahme, aus keiner Quelle explizit als Verhalten bestätigt, nur als Zweck des Parameters plausibel) | Verhalten bei einer hängenden/abgestürzten Integration | Produktiver Einsatz von M2 |
 | Tatsächliche Reaktionszeit auf eine geschriebene Leistungsvorgabe (bekannt ist nur „~3 s" für Selbstverbrauchsmodus mit CT002, nicht für eine direkte Vorgabe) | Poll-Intervall in `coordinator.py` | M2, Feintuning |
+
+**Geklärt (04.09.2026):** Fällt das Gerät nach `cd_time` (300 s) tatsächlich in den vorherigen
+Modus zurück, wenn kein neuer Sollwert kommt? **Ja** — per HA-Verlauf live bestätigt, siehe
+„HEMS-Anforderung ‚hängt' nach 5 Minuten" weiter unten und [ADR D-012](adr/D-012-hems-keepalive.md).
 
 ## Marstek-Protokoll — Quellenlage
 
@@ -156,6 +159,46 @@ für die Geräteklasse `battery` liegt (kein sichtbares HA-`script`/`automation`
 `script.ems_regler_berechnen` behandelt nur Heizstab/Wallbox/Heizlüfter, nicht den Speicher; die
 Berechnung für `battery` läuft demnach im Python-Add-on selbst) oder eine andere Ursache hat, ist
 außerhalb dieses Repos zu klären.
+
+## HEMS-Anforderung „hängt" nach 5 Minuten (gemeldet 04.09.2026, behoben)
+
+User-Beobachtung: Speicher lädt manchmal nicht, obwohl `sensor.<prefix>_hems_soll_ladeleistung`
+weiterhin z. B. 2500 W zeigt — Aus-/Einschalten von `switch.<prefix>_hems_steuerung_aktiv` bringt
+die Anbindung jedes Mal wieder zum Laufen, bis zum nächsten Mal. War schon mehrfach aufgetreten.
+
+Per `ha_get_history` (HA-Verlauf) rekonstruiert, zwei Vorfälle am 04.09.2026:
+
+| Letzter tatsächlich gesendeter Sollwert | Ladung stoppt (`sensor.<prefix>_ist_ladeleistung` → 0) | Abstand |
+|---|---|---|
+| 13:37:08 | 13:42:12 | 304 s |
+| 13:44:02 | 13:49:02 | 300 s |
+
+Beide Abstände treffen exakt `cd_time` (`_PASSIVE_MODE_DURATION_S` = 300 s,
+`adapters/marstek_udp.py`) — den Sicherheits-Watchdog des Marstek-Passive-Mode: läuft er ab, ohne
+dass ein neuer Sollwert kommt, fällt das Gerät aus dem Passive-Mode zurück. Beantwortet damit die
+bis dahin offene Frage weiter oben in dieser Datei — ja, das Gerät fällt tatsächlich zurück.
+
+**Ursache:** `hems_bridge.py` synchronisierte bislang rein ereignisgetrieben
+(`async_track_state_change_event` auf die beiden HEMS-Anforderungshelfer). Blieb die HEMS-
+Anforderung mehrere Minuten exakt unverändert, feuerte kein Helferevent mehr, also lief
+`_async_sync()` nicht erneut — obwohl der zuletzt gesendete Sollwert weiterhin gilt. Der Watchdog
+kennt diesen Unterschied nicht: er verlangt einen neuen Aufruf, unabhängig davon, ob sich der Wert
+geändert hat. `sensor.<prefix>_hems_soll_ladeleistung` zeigte in dieser Zeit weiterhin den zuletzt
+erfolgreich gesendeten (jetzt veralteten) Wert — sieht aus wie „Anforderung da, Speicher ignoriert
+sie", ist tatsächlich „Anforderung ist zu alt, Gerät hat sie selbst verworfen". Kein Fehler im
+Log, weil kein Schreibvorgang fehlschlägt — es wird schlicht keiner mehr versucht. Widerlegt
+außerdem eine bisherige Design-Annahme (D-008): SkytechHEMS sendet **nicht** von sich aus erneut,
+solange sich der Anforderungswert nicht ändert.
+
+**Fix:** `hems_bridge.py` sendet den aktuellen Sollwert jetzt zusätzlich alle 60 s erneut
+(`HEMS_KEEPALIVE_INTERVAL`, `const.py`, `async_track_time_interval`) — deutlich unter den 300 s
+von `cd_time`, unabhängig davon, ob sich die HEMS-Anforderung seitdem geändert hat. Kein
+Zero-Zwischenschritt bei unveränderter Betriebsart (bestehende `mode_changed`-Logik, siehe
+„Speicher springt" oben, gilt unverändert für Keep-Alive-Ticks). Tests:
+`test_keepalive_sendet_unveraenderten_sollwert_erneut`,
+`test_keepalive_sendet_nichts_waehrend_pause`,
+`test_unload_entfernt_auch_den_keepalive_listener`. Ausführlich:
+[ADR D-012](adr/D-012-hems-keepalive.md).
 
 ## Stolpersteine
 

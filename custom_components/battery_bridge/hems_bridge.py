@@ -28,6 +28,20 @@ HEMS-Zyklus es sofort überschreibt. `async_resume()` setzt `_last_applied_mode`
 sofort synchronisiert — erzwingt damit den Zero-Schritt der inaktiven Richtung auch dann, wenn
 sich die Betriebsart seit der Pause nicht geändert hat (während der Pause könnte die inaktive
 Richtung manuell verändert worden sein, das darf beim Fortsetzen nicht unbemerkt stehen bleiben).
+
+Keep-Alive (D-012): Neben dem ereignisgetriebenen Sync auf Änderungen der beiden HEMS-Helfer läuft
+zusätzlich ein fester `HEMS_KEEPALIVE_INTERVAL`-Takt (`const.py`), der denselben `_async_sync()`
+erneut anstößt — unabhängig davon, ob sich die HEMS-Anforderung seitdem geändert hat. Grund: der
+Marstek-Passive-Mode-Sollwert trägt einen eigenen Sicherheits-Watchdog (`cd_time`, siehe
+`adapters/marstek_udp.py`), der nach 300 s ohne neuen Schreibvorgang das Gerät aus dem Passive-Mode
+zurückfallen lässt — unabhängig davon, ob der zuletzt gesendete Sollwert weiterhin gilt. Bleibt die
+HEMS-Anforderung mehrere Minuten exakt unverändert, gäbe es ohne Keep-Alive kein auslösendes
+Ereignis mehr, und der Speicher würde trotz unverändert aktiver Anforderung leise aus dem
+Passive-Mode fallen. Per HA-Verlauf am 04.09.2026 genau in diesem Muster beobachtet und bestätigt
+(zwei Ladeabbrüche, je ~300 s nach dem letzten tatsächlich gesendeten Sollwert) — Details:
+`docs/bekannte-luecken.md`, Abschnitt „HEMS-Anforderung ‚hängt' nach 5 Minuten". Ersetzt die
+gegenteilige Annahme aus D-008 (dort noch: kein automatischer Refresh-Loop nötig, HEMS/Automationen
+senden bei Bedarf selbst erneut) — traf so nicht zu, siehe ADR D-012.
 """
 
 from __future__ import annotations
@@ -35,12 +49,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from homeassistant.core import Event, HomeAssistant
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 
 from .adapters.base import StorageAdapterError
+from .const import HEMS_KEEPALIVE_INTERVAL
 
 if TYPE_CHECKING:
     from .coordinator import BatteryBridgeCoordinator
@@ -72,6 +88,7 @@ class HemsBridge:
         self._power_entity_id = f"input_number.ems_{hems_entity_prefix}_anforderung_leistung_w"
         self._mode_entity_id = f"input_select.ems_{hems_entity_prefix}_anforderung_betriebsart"
         self._unsub: Callable[[], None] | None = None
+        self._unsub_keepalive: Callable[[], None] | None = None
         self._warned_missing = False
         # Zuletzt erfolgreich angewendete Betriebsart — nur bei einem Wechsel gegenüber diesem
         # Wert wird die inaktive Richtung auf 0 gesetzt (siehe Moduldoc). `None` vor dem ersten
@@ -112,11 +129,15 @@ class HemsBridge:
         await self._async_sync()
 
     async def async_setup(self) -> None:
-        """Auf beide HEMS-Helfer hören und den aktuell gesetzten Wert einmal übernehmen."""
+        """Auf beide HEMS-Helfer hören, den aktuell gesetzten Wert einmal übernehmen und den
+        Keep-Alive-Takt starten (D-012, siehe Moduldoc)."""
         self._unsub = async_track_state_change_event(
             self._hass,
             [self._power_entity_id, self._mode_entity_id],
             self._async_handle_event,
+        )
+        self._unsub_keepalive = async_track_time_interval(
+            self._hass, self._async_handle_keepalive, HEMS_KEEPALIVE_INTERVAL
         )
         await self._async_sync()
 
@@ -125,8 +146,17 @@ class HemsBridge:
         if self._unsub is not None:
             self._unsub()
             self._unsub = None
+        if self._unsub_keepalive is not None:
+            self._unsub_keepalive()
+            self._unsub_keepalive = None
 
     async def _async_handle_event(self, _event: Event) -> None:
+        await self._async_sync()
+
+    async def _async_handle_keepalive(self, _now: datetime) -> None:
+        # Derselbe Sync wie beim Helfer-Event — hält bei unveränderter HEMS-Anforderung den
+        # Marstek-Passive-Mode-Watchdog am Leben (siehe Moduldoc, D-012). `_async_sync()` prüft
+        # `_enabled` selbst, ein pausierter Sync (switch.py, D-011) bleibt also auch hier stumm.
         await self._async_sync()
 
     async def _async_sync(self) -> None:

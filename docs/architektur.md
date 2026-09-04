@@ -78,9 +78,10 @@ Entities werden `unavailable` — kein Crash, kein Reload nötig.
 Der Schreibpfad läuft ohne Umweg über den Coordinator: `number.py` ruft bei jeder Wertänderung
 direkt `adapter.write_charge_power()`/`write_discharge_power()` auf, meldet einen Fehlschlag als
 `HomeAssistantError` (nie still) und stößt bei Erfolg `coordinator.async_request_refresh()` an,
-damit die Ist-Werte zeitnah nachziehen. Kein aktiver Refresh-Loop hält den Sollwert am Leben —
-das übernimmt der `cd_time`-Watchdog im Adapter selbst (D-008). **Unverifiziert an echter
-Hardware**, siehe [bekannte-luecken.md](bekannte-luecken.md).
+damit die Ist-Werte zeitnah nachziehen. Für diesen manuellen Schreibpfad gibt es bewusst keinen
+aktiven Refresh-Loop, der den Sollwert am Leben hält — das übernimmt der `cd_time`-Watchdog im
+Adapter selbst (D-008). **Unverifiziert an echter Hardware**, siehe
+[bekannte-luecken.md](bekannte-luecken.md).
 
 **Optionaler zweiter Schreibpfad — HEMS-Anbindung (D-009):** Ist im Config-Entry ein HEMS-Präfix
 hinterlegt, hört `hems_bridge.py` per `async_track_state_change_event` auf
@@ -89,9 +90,15 @@ hinterlegt, hört `hems_bridge.py` per `async_track_state_change_event` auf
 `adapter.write_charge_power()`/`write_discharge_power()` auf wie `number.py` — nur ausgelöst durch
 HEMS' eigene Helfer statt durch eine `number.set_value`-Service-Aktion. Ein Fehlschlag wird hier
 nur geloggt, nie als `HomeAssistantError` geworfen (kein Service-Aufrufer, dem ein Toast angezeigt
-werden könnte). Das ist genau die in `plan.md` §9 als „später, optionaler Bridge-Baustein"
-angekündigte Erweiterung, jetzt Teil der Integration statt einer externen HA-Automation — siehe
-[design-entscheidungen.md](design-entscheidungen.md) D-009 und
+werden könnte). Anders als beim manuellen Schreibpfad läuft hier zusätzlich ein
+Keep-Alive-Timer (`HEMS_KEEPALIVE_INTERVAL`, 60 s): SkytechHEMS sendet nachweislich nicht erneut,
+solange sich die Anforderung nicht ändert, der `cd_time`-Watchdog verlangt aber unabhängig davon
+einen neuen Aufruf — ohne den Timer fiele der Speicher nach 300 s aus dem Sollwert, obwohl die
+Anforderung weiterhin gilt (siehe [bekannte-luecken.md](bekannte-luecken.md) und
+[docs/adr/D-012-hems-keepalive.md](adr/D-012-hems-keepalive.md)). Das ist genau die in `plan.md`
+§9 als „später, optionaler Bridge-Baustein" angekündigte Erweiterung, jetzt Teil der Integration
+statt einer externen HA-Automation — siehe [design-entscheidungen.md](design-entscheidungen.md)
+D-009 und
 [docs/adr/D-009-hems-anbindung-in-integration.md](adr/D-009-hems-anbindung-in-integration.md).
 
 Bei jedem erfolgreichen Sync merkt sich `hems_bridge.py` den gesendeten Wert als
