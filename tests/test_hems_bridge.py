@@ -240,6 +240,49 @@ async def test_last_command_bleibt_bei_fehlgeschlagenem_schreibversuch_erhalten(
     assert entry.runtime_data.hems_bridge.last_command == vorheriger_wert
 
 
+async def test_enabled_ist_nach_setup_standardmaessig_true(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nach jedem Neustart/Neuladen übernimmt HEMS automatisch wieder die Kontrolle — eine Pause
+    übersteht das bewusst nicht (siehe docs/design-entscheidungen.md D-011)."""
+    _calls, entry = await _setup_entry(hass, monkeypatch)
+
+    assert entry.runtime_data.hems_bridge.enabled is True
+
+
+async def test_async_pause_stoppt_synchronisation(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    await entry.runtime_data.hems_bridge.async_pause()
+    await _set_anforderung(hass, leistung_w="500", betriebsart="entladen")
+
+    assert calls == []
+
+
+async def test_async_resume_synchronisiert_sofort_ohne_neue_helferaenderung(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fortsetzen darf nicht auf die nächste zufällige HEMS-Änderung warten — der aktuelle
+    Sollwert muss sofort erneut gesendet werden, sonst bleibt der Speicher unnötig lange auf dem
+    zuletzt manuell gesetzten Wert stehen. Die Betriebsart „laden" ist seit vor der Pause
+    unverändert (`mode_changed` wäre nach naiver Definition `False`) — trotzdem muss der
+    Zero-Schritt der inaktiven Richtung erneut feuern, falls während der Pause manuell an
+    number.<prefix>_soll_entladeleistung gedreht wurde."""
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    hems_bridge = entry.runtime_data.hems_bridge
+    await hems_bridge.async_pause()
+    calls.clear()
+
+    await hems_bridge.async_resume()
+
+    assert calls == [("discharge", 0.0), ("charge", 800.0)]
+
+
 async def test_schreibfehler_wird_geloggt_nicht_propagiert(
     hass: HomeAssistant,
     monkeypatch: pytest.MonkeyPatch,

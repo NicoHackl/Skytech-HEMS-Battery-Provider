@@ -17,7 +17,7 @@ from .const import (
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
 from .hems_bridge import HemsBridge
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER, Platform.SWITCH]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> bool:

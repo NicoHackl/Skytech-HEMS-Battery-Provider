@@ -21,6 +21,13 @@ HEMS-Anbindung insgesamt: docs/adr/D-009-hems-anbindung-in-integration.md.
 gesendete Sollwert, unabhängig vom aktuellen Poll-Zustand des Coordinators. Schließt die in
 `docs/bekannte-luecken.md` beschriebene Lücke, dass `number.<prefix>_soll_*` nicht zeigt, was
 diese Anbindung tatsächlich sendet (die schreibt direkt am Adapter vorbei).
+
+`enabled`/`async_pause()`/`async_resume()` sind die öffentliche Schnittstelle für `switch.py`
+(D-011): pausiert lässt sich `number.<prefix>_soll_*` von Hand bedienen, ohne dass der nächste
+HEMS-Zyklus es sofort überschreibt. `async_resume()` setzt `_last_applied_mode` zurück, bevor es
+sofort synchronisiert — erzwingt damit den Zero-Schritt der inaktiven Richtung auch dann, wenn
+sich die Betriebsart seit der Pause nicht geändert hat (während der Pause könnte die inaktive
+Richtung manuell verändert worden sein, das darf beim Fortsetzen nicht unbemerkt stehen bleiben).
 """
 
 from __future__ import annotations
@@ -75,11 +82,34 @@ class HemsBridge:
         # dem ersten erfolgreichen Sync — derselbe Leerzustand wie bei `_last_applied_mode`, nie
         # eine geratene 0 vortäuschen.
         self._last_command: HemsCommandState | None = None
+        # Steuert, ob _async_sync() automatisch schreibt — für switch.py (D-011). Startet immer
+        # aktiv: nach jedem Neustart/Neuladen übernimmt HEMS wieder die Kontrolle, eine Pause
+        # übersteht das bewusst nicht (siehe docs/design-entscheidungen.md D-011).
+        self._enabled = True
 
     @property
     def last_command(self) -> HemsCommandState | None:
         """Zuletzt erfolgreich an den Adapter gesendeter Sollwert, `None` vor dem ersten Sync."""
         return self._last_command
+
+    @property
+    def enabled(self) -> bool:
+        """Ob die Anbindung aktuell automatisch schreibt — für switch.py (`is_on`)."""
+        return self._enabled
+
+    async def async_pause(self) -> None:
+        """Automatische Schreibvorgänge pausieren (switch.py aus, D-011)."""
+        self._enabled = False
+
+    async def async_resume(self) -> None:
+        """Automatische Schreibvorgänge fortsetzen und sofort mit dem aktuellen HEMS-Sollwert
+        synchronisieren, statt auf die nächste zufällige Helfer-Änderung zu warten (D-011)."""
+        self._enabled = True
+        # Erzwingt den Zero-Schritt der inaktiven Richtung beim nächsten Sync, auch wenn sich
+        # die Betriebsart seit der Pause nicht geändert hat — während der Pause könnte die
+        # inaktive Richtung manuell über number.<prefix>_soll_* verändert worden sein.
+        self._last_applied_mode = None
+        await self._async_sync()
 
     async def async_setup(self) -> None:
         """Auf beide HEMS-Helfer hören und den aktuell gesetzten Wert einmal übernehmen."""
@@ -101,6 +131,9 @@ class HemsBridge:
 
     async def _async_sync(self) -> None:
         """Aktuelle HEMS-Anforderung lesen und als Sollwert(e) an den Adapter senden."""
+        if not self._enabled:
+            return
+
         mode_state = self._hass.states.get(self._mode_entity_id)
         power_state = self._hass.states.get(self._power_entity_id)
 

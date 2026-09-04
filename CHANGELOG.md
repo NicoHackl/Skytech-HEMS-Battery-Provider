@@ -9,6 +9,19 @@ Kategorien: `Hinzugefügt`, `Geändert`, `Veraltet`, `Entfernt`, `Behoben`, `Sic
 Einträge werden aus **Nutzersicht** formuliert — was sich für den Anwender ändert, nicht welche
 Datei angefasst wurde.
 
+## [0.4.0] — 04.09.2026
+
+### Hinzugefügt
+
+- Neuer Schalter je Speicher mit aktiver HEMS-Anbindung: „HEMS-Steuerung" pausiert/setzt die
+  automatischen Schreibvorgänge der HEMS-Anbindung fort. Ausgeschaltet lassen sich
+  Soll-Ladeleistung und Soll-Entladeleistung wieder von Hand setzen, ohne dass der nächste
+  HEMS-Zyklus sie sofort überschreibt. Eingeschaltet übernimmt die HEMS-Anbindung sofort wieder
+  den aktuellen Sollwert, statt erst auf die nächste Änderung der HEMS-Vorgabe zu warten. Der
+  Schalter steht nach jedem Neustart von Home Assistant oder Neuladen der Integration wieder auf
+  EIN — eine Pause übersteht das bewusst nicht. Nur sichtbar, wenn für den Speicher ein
+  SkytechHEMS-Präfix eingerichtet ist.
+
 ## [0.3.0] — 04.09.2026
 
 ### Geändert

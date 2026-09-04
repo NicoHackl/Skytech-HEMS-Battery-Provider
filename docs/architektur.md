@@ -42,6 +42,7 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
                                        └─────────────────────►│  Platforms  │
                                                                │ sensor.py   │
                                                                │ number.py   │
+                                                               │ switch.py   │
                                                                └──────┬──────┘
                                                                       │ Entities
                                                                       ▼
@@ -56,6 +57,7 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
 | `sensor.py` | `StorageState`-Felder als HA-Entities abbilden; bei aktiver HEMS-Anbindung zusätzlich `HemsBridge.last_command` (siehe unten) | Eigene Poll- oder Verbindungslogik — das ist Aufgabe des Coordinators/Adapters |
 | `number.py` | Soll-Werte entgegennehmen, Schreibaufrufe an den Adapter durchreichen, Fehler als HA-Fehler melden | Eigene Poll- oder Verbindungslogik |
 | `hems_bridge.py` (optional, nur mit HEMS-Präfix) | HEMS' Anforderungshelfer (`input_number`/`input_select`) beobachten, bei Änderung 1:1 in Adapter-Schreibaufrufe übersetzen (D-009) | Eigene Regel- oder Verteilungslogik — nur Übersetzung; andere Entities als die eigenen HEMS-Helfer lesen |
+| `switch.py` (optional, nur mit HEMS-Präfix) | Ein Schalter je Speicher: pausiert/setzt die automatischen Schreibvorgänge von `hems_bridge.py` fort (D-011) | Eigene Poll- oder Verbindungslogik; einen Geräte-Sollwert selbst ändern |
 
 Regel: Keine Komponente übernimmt Aufgaben einer anderen. Verschiebt sich eine Verantwortung,
 ist das eine Design-Entscheidung → [design-entscheidungen.md](design-entscheidungen.md).
@@ -99,6 +101,11 @@ das für zwei zusätzliche, nur bei HEMS-Präfix angelegte Sensoren aus (D-010):
 HEMS-Anbindung, und bleibt bei einem Schreibfehler bewusst auf dem letzten bekannten Stand stehen
 statt auf „nicht verfügbar" zu springen.
 
+Ein optionaler Schalter (`switch.<prefix>_hems_steuerung_aktiv`, D-011) pausiert/setzt diesen
+Schreibpfad fort, ohne den HEMS-Vertrag selbst oder D-009 zu ändern — ausgeschaltet lässt sich
+`number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung` von Hand bedienen, ohne dass der
+nächste HEMS-Sync das sofort überschreibt. Steht nach jedem Neustart/Neuladen wieder auf EIN.
+
 Details zur öffentlichen Schnittstelle (Entities, Adapter-Vertrag): [api-referenz.md](api-referenz.md).
 
 ## Verzeichnisstruktur
@@ -119,6 +126,7 @@ custom_components/battery_bridge/
 │                                     #   optional: HEMS-Soll-Lade-/Entladeleistung-W (D-010)
 ├── number.py                         # Soll-Ladeleistung-W, Soll-Entladeleistung-W
 ├── hems_bridge.py                     # optional: HEMS-Anforderungshelfer → Adapter (D-009)
+├── switch.py                           # optional: HEMS-Steuerung pausieren/fortsetzen (D-011)
 └── strings.json / translations/de.json   # Config-Flow- und Entity-Texte (identisch, siehe unten)
 
 tests/
@@ -128,6 +136,7 @@ tests/
 ├── test_number.py                    # ebenso
 ├── test_sensor.py                     # ebenso
 ├── test_hems_bridge.py                # ebenso
+├── test_switch.py                      # ebenso
 └── conftest.py                        # gemeinsame Test-Helfer (MockConfigEntry, Entity-Lookup)
 
 hacs.json, pyproject.toml            # HACS-Metadaten, uv-Projekt + Dev-Dependencies
@@ -149,6 +158,9 @@ Zusagen, auf die sich der gesamte Code verlässt. Wer eine davon bricht, bricht 
    den Aufrufer zurück — nie ein stiller Fehlschlag.
 4. Diese Integration schaltet ausschließlich die eigenen Speicher-Entities — nie andere
    Endgeräte direkt (HEMS-Architekturgrenze, siehe Abgrenzung oben).
+5. Der HEMS-Steuerung-Schalter (`switch.py`, D-011) ändert nie selbst einen Geräte-Sollwert —
+   er schaltet ausschließlich, ob `hems_bridge.py` automatisch schreibt. Der Sollwert selbst
+   kommt weiterhin nur von `number.py` (manuell) oder `hems_bridge.py` (automatisch).
 
 ## Start und Betrieb
 
