@@ -176,7 +176,13 @@ Dinge, die schon einmal Zeit gekostet haben:
   03.09.2026: Entity zeigte `0.0`, während die Anlage mit −417 W entlud). Kein Bug im Sinne von
   falschem Verhalten — Adapter-Aufruf und Entity-Anzeige sind schlicht zwei getrennte Pfade —
   aber irreführend für jeden, der aus der Entity-Anzeige den aktuellen Sollwert abliest, solange
-  eine HEMS-Anbindung aktiv ist. Noch nicht behoben, kein gemeldeter Auftrag dafür.
+  eine HEMS-Anbindung aktiv ist. **Verhalten von `number.py` bleibt unverändert** (Absicht: die
+  Number-Entities sind für manuelles Bedienen da, nicht als Anzeige der HEMS-Anbindung) — seit
+  0.3.0 gibt es aber einen korrekten Ablesepunkt daneben:
+  `sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` zeigen genau den Wert,
+  den `hems_bridge.py` zuletzt erfolgreich an den Adapter gesendet hat (`HemsBridge.last_command`,
+  siehe `docs/datenmodell.md`) — nur vorhanden, wenn für den Speicher ein HEMS-Präfix eingerichtet
+  ist. Siehe CHANGELOG.md `[0.3.0]`.
 
 ## Offene Bugs
 

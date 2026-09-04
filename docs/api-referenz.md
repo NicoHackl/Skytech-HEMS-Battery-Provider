@@ -16,6 +16,8 @@ ein `device_info` (Hersteller, Modell, `unique_id` des Entry).
 | `sensor.<prefix>_ist_entladeleistung` | sensor | W | lesen | umgesetzt (M1) |
 | `number.<prefix>_soll_ladeleistung` | number | W | schreiben | umgesetzt, unverifiziert an Hardware (M2) |
 | `number.<prefix>_soll_entladeleistung` | number | W | schreiben | umgesetzt, unverifiziert an Hardware (M2) |
+| `sensor.<prefix>_hems_soll_ladeleistung` | sensor | W | lesen | umgesetzt (D-010), nur mit HEMS-Präfix |
+| `sensor.<prefix>_hems_soll_entladeleistung` | sensor | W | lesen | umgesetzt (D-010), nur mit HEMS-Präfix |
 
 `number.*` liest sich nicht vom Gerät zurück (die Marstek Local API bietet dafür keinen
 Read-Pfad) — die Entity zeigt den zuletzt erfolgreich gesendeten Wert (`assumed_state`), nicht
@@ -44,6 +46,12 @@ Richtungen `0`) statt zu raten.
 
 Diese beiden Entities sind der einzige Kontrakt, den diese Integration von SkytechHEMS
 konsumiert — sie werden nur gelesen, nie geschrieben.
+
+Den zuletzt tatsächlich gesendeten Sollwert liest man **nicht** an `number.<prefix>_soll_*` ab
+(die bleiben davon unberührt, siehe [bekannte-luecken.md](bekannte-luecken.md)), sondern an
+`sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` — `assumed_state` wie
+`number.*`, `unavailable` bis zum ersten erfolgreichen Sync, bleibt bei einem Schreibfehler
+bewusst auf dem letzten bekannten Wert stehen (D-010).
 
 ## `StorageAdapter`-Protocol (`adapters/base.py`)
 

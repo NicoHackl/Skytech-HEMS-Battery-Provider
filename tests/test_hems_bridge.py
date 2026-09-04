@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.battery_bridge.adapters.base import StorageAdapterError
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
+from custom_components.battery_bridge.hems_bridge import HemsCommandState
 from custom_components.battery_bridge.models import StorageState
 from tests.conftest import make_marstek_entry
 
@@ -182,6 +183,61 @@ async def test_nach_fehlgeschlagenem_wechsel_wird_beim_naechsten_sync_erneut_gen
     await hass.async_block_till_done()
 
     assert calls == [("charge", 0.0), ("discharge", 801.0)]
+
+
+async def test_last_command_ist_none_vor_erstem_erfolgreichen_sync(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Leerzustand: vor dem ersten erfolgreichen Sync (HEMS-Helfer fehlen noch) gibt es keinen
+    geratenen Ersatzwert, nur `None` — dieselbe Konvention wie bei `_last_applied_mode`."""
+    _calls, entry = await _setup_entry(hass, monkeypatch)
+
+    assert entry.runtime_data.hems_bridge.last_command is None
+
+
+async def test_last_command_spiegelt_ladeleistung_nach_laden_sync(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _calls, entry = await _setup_entry(hass, monkeypatch)
+
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+
+    assert entry.runtime_data.hems_bridge.last_command == HemsCommandState(
+        charge_power_w=800.0, discharge_power_w=0.0
+    )
+
+
+async def test_last_command_spiegelt_entladeleistung_nach_entladen_sync(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _calls, entry = await _setup_entry(hass, monkeypatch)
+
+    await _set_anforderung(hass, leistung_w="-500", betriebsart="entladen")
+
+    assert entry.runtime_data.hems_bridge.last_command == HemsCommandState(
+        charge_power_w=0.0, discharge_power_w=500.0
+    )
+
+
+async def test_last_command_bleibt_bei_fehlgeschlagenem_schreibversuch_erhalten(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ein Schreibfehler darf den zuletzt bekannten, tatsächlich gesendeten Wert nicht durch
+    einen falschen neuen Wert überschreiben — genau die Lücke, die dieser Sensor schließen soll:
+    ein Fehlschlag zeigt sich als veralteter Wert, nicht als beschönigter Passthrough."""
+    _calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    vorheriger_wert = entry.runtime_data.hems_bridge.last_command
+
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=StorageAdapterError("boom")),
+    )
+    hass.states.async_set(_POWER_ENTITY, "950")
+    await hass.async_block_till_done()
+
+    assert entry.runtime_data.hems_bridge.last_command == vorheriger_wert
 
 
 async def test_schreibfehler_wird_geloggt_nicht_propagiert(

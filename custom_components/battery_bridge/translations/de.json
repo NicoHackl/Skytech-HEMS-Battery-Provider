@@ -36,6 +36,12 @@
       },
       "ist_entladeleistung": {
         "name": "Ist-Entladeleistung"
+      },
+      "hems_soll_ladeleistung": {
+        "name": "HEMS-Soll-Ladeleistung"
+      },
+      "hems_soll_entladeleistung": {
+        "name": "HEMS-Soll-Entladeleistung"
       }
     },
     "number": {
