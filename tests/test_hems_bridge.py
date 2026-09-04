@@ -9,9 +9,12 @@ from unittest.mock import AsyncMock
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.battery_bridge.adapters.base import StorageAdapterError
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
+from custom_components.battery_bridge.const import HEMS_KEEPALIVE_INTERVAL
 from custom_components.battery_bridge.hems_bridge import HemsCommandState
 from custom_components.battery_bridge.models import StorageState
 from tests.conftest import make_marstek_entry
@@ -328,6 +331,58 @@ async def test_unload_entfernt_den_listener(
     calls.clear()
 
     hass.states.async_set(_MODE_ENTITY, "entladen")
+    await hass.async_block_till_done()
+
+    assert calls == []
+
+
+async def test_keepalive_sendet_unveraenderten_sollwert_erneut(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-012: Bleibt die HEMS-Anforderung minutenlang exakt unverändert, feuert kein Helfer-Event
+    mehr — trotzdem muss der Sollwert regelmäßig erneut gesendet werden, sonst fällt der
+    Marstek-Passive-Mode-Watchdog (`cd_time`, 300 s) das Gerät nach spätestens 5 Minuten aus dem
+    Sollwert zurück, obwohl die Anforderung weiterhin unverändert gilt (per HA-Verlauf am
+    04.09.2026 in genau diesem Muster beobachtet, siehe docs/bekannte-luecken.md)."""
+    calls, _entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + HEMS_KEEPALIVE_INTERVAL)
+    await hass.async_block_till_done()
+
+    # Kein Zero-Schritt: Betriebsart ist seit dem letzten Sync unverändert (siehe Moduldoc zu
+    # mode_changed) — der Keep-Alive darf keinen künstlichen Sprung auf 0 W auslösen.
+    assert calls == [("charge", 800.0)]
+
+
+async def test_keepalive_sendet_nichts_waehrend_pause(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pausiert (switch.py aus, D-011) darf auch der Keep-Alive-Takt nicht automatisch
+    schreiben — dieselbe Zusicherung wie beim ereignisgetriebenen Sync."""
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    await entry.runtime_data.hems_bridge.async_pause()
+    calls.clear()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + HEMS_KEEPALIVE_INTERVAL)
+    await hass.async_block_till_done()
+
+    assert calls == []
+
+
+async def test_unload_entfernt_auch_den_keepalive_listener(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    calls.clear()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + HEMS_KEEPALIVE_INTERVAL)
     await hass.async_block_till_done()
 
     assert calls == []
