@@ -1,6 +1,6 @@
 {
   "domain": "battery_bridge",
-  "name": "Battery Bridge",
+  "name": "Skytech HEMS Battery Provider",
   "codeowners": ["@NicoHackl"],
   "config_flow": true,
   "documentation": "https://github.com/NicoHackl/Skytech-HEMS-Battery-Provider",

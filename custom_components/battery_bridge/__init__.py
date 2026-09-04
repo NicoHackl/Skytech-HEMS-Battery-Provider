@@ -1,4 +1,4 @@
-"""Battery Bridge — Setup und Unload der Integration."""
+"""Skytech HEMS Battery Provider — Setup und Unload der Integration."""
 
 from __future__ import annotations
 
