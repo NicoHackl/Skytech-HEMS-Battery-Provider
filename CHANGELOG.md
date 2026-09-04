@@ -9,6 +9,12 @@ Kategorien: `Hinzugefügt`, `Geändert`, `Veraltet`, `Entfernt`, `Behoben`, `Sic
 Einträge werden aus **Nutzersicht** formuliert — was sich für den Anwender ändert, nicht welche
 Datei angefasst wurde.
 
+## Unveröffentlicht
+
+### Hinzugefügt
+
+- Lizenz festgelegt: MIT.
+
 ## [0.4.0] — 04.09.2026
 
 ### Hinzugefügt

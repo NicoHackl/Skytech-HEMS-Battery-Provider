@@ -48,4 +48,4 @@ Vor dem ersten Commit lesen: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Lizenz
 
-Noch nicht festgelegt — offener Punkt, siehe [docs/roadmap.md](docs/roadmap.md).
+[MIT](LICENSE)
