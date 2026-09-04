@@ -13,6 +13,9 @@ Datei angefasst wurde.
 
 ### Hinzugefügt
 
+- Markenicon hinterlegt: Die Integration erscheint jetzt mit eigenem Icon statt Platzhalter, u. a.
+  bei Geräten & Diensten und im HACS-Store.
+
 - Lizenz festgelegt: MIT.
 
 ## [0.4.0] — 04.09.2026
