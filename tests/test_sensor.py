@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.battery_bridge.adapters.base import StorageAdapterError
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
 from custom_components.battery_bridge.models import StorageState
 from tests.conftest import entity_ids_by_key, make_marstek_entry
@@ -111,3 +112,26 @@ async def test_hems_soll_entladeleistung_zeigt_gesendeten_wert(
 
     assert hass.states.get(entity_ids["hems_soll_ladeleistung"]).state == "0.0"
     assert hass.states.get(entity_ids["hems_soll_entladeleistung"]).state == "500.0"
+
+
+async def test_hems_sensoren_sind_bei_schreibfehler_nicht_verfuegbar(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Erreicht der Sollwert das Gerät nicht mehr, ist unbekannt, was am Speicher gilt. Dann
+    verschwindet der Wert, statt einen unbestätigten Stand weiterzuzeigen — am 10.09.2026 stand
+    hier 96 Minuten lang unverändert `0.0`, während kein Schreibvorgang durchkam."""
+    _entry, entity_ids = await _setup_loaded_entry(hass, monkeypatch, hems_entity_prefix=_PREFIX)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    assert hass.states.get(entity_ids["hems_soll_ladeleistung"]).state == "800.0"
+
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=StorageAdapterError("Gerät antwortet nicht")),
+    )
+    hass.states.async_set(_POWER_ENTITY, "801")
+    await hass.async_block_till_done()
+
+    assert hass.states.get(entity_ids["hems_soll_ladeleistung"]).state == "unavailable"
+    assert hass.states.get(entity_ids["hems_soll_entladeleistung"]).state == "unavailable"
+

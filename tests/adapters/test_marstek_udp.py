@@ -25,7 +25,7 @@ class _FakeTransport:
     """Ersetzt den echten `asyncio.DatagramTransport` — `sendto()` löst die Antwort direkt aus."""
 
     def __init__(self, protocol: asyncio.DatagramProtocol, responder: Responder) -> None:
-        self._protocol = protocol
+        self.protocol = protocol
         self._responder = responder
         self.sent: list[dict] = []
         self.closed = False
@@ -35,27 +35,50 @@ class _FakeTransport:
         self.sent.append(request)
         reply = self._responder(request)
         if reply is not None:
-            self._protocol.datagram_received(json.dumps(reply).encode(), ("127.0.0.1", 0))
+            self.protocol.datagram_received(json.dumps(reply).encode(), ("127.0.0.1", 0))
 
     def close(self) -> None:
         self.closed = True
+
+    def is_closing(self) -> bool:
+        return self.closed
+
+
+def _patch_endpoint(monkeypatch: pytest.MonkeyPatch, responder: Responder) -> list[_FakeTransport]:
+    """Transport-Erzeugung auf `_FakeTransport` umleiten und jeden erzeugten Transport sammeln.
+
+    Die Liste ist der Nachweis für einen Neuaufbau: ein zweiter Eintrag heißt, der Adapter hat
+    sich einen frischen Socket geholt (siehe `adapters/marstek_udp.py`, Abschnitt Verbindungs-
+    abbruch im Moduldoc).
+    """
+    transports: list[_FakeTransport] = []
+
+    async def fake_create_datagram_endpoint(protocol_factory, **_kwargs):
+        protocol = protocol_factory()
+        transport = _FakeTransport(protocol, responder)
+        transports.append(transport)
+        return transport, protocol
+
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "create_datagram_endpoint", fake_create_datagram_endpoint)
+    return transports
+
+
+async def _connected_adapter_with_transports(
+    monkeypatch: pytest.MonkeyPatch, responder: Responder
+) -> tuple[MarstekUdpAdapter, list[_FakeTransport]]:
+    """Wie `_connected_adapter()`, gibt zusätzlich die Liste der erzeugten Transports zurück."""
+    transports = _patch_endpoint(monkeypatch, responder)
+    adapter = MarstekUdpAdapter("127.0.0.1", 30000)
+    await adapter.connect()
+    return adapter, transports
 
 
 async def _connected_adapter(
     monkeypatch: pytest.MonkeyPatch, responder: Responder
 ) -> MarstekUdpAdapter:
     """`MarstekUdpAdapter`, dessen Transport-Erzeugung auf `_FakeTransport` umgeleitet ist."""
-
-    async def fake_create_datagram_endpoint(protocol_factory, **_kwargs):
-        protocol = protocol_factory()
-        transport = _FakeTransport(protocol, responder)
-        return transport, protocol
-
-    loop = asyncio.get_running_loop()
-    monkeypatch.setattr(loop, "create_datagram_endpoint", fake_create_datagram_endpoint)
-
-    adapter = MarstekUdpAdapter("127.0.0.1", 30000)
-    await adapter.connect()
+    adapter, _transports = await _connected_adapter_with_transports(monkeypatch, responder)
     return adapter
 
 
@@ -269,6 +292,9 @@ async def test_gleichzeitige_aufrufe_teilen_sich_nicht_die_antwort(
         def close(self) -> None:
             self.closed = True
 
+        def is_closing(self) -> bool:
+            return self.closed
+
     async def fake_create_datagram_endpoint(protocol_factory, **_kwargs):
         protocol = protocol_factory()
         return _DeferredTransport(protocol), protocol
@@ -291,3 +317,108 @@ async def test_gleichzeitige_aufrufe_teilen_sich_nicht_die_antwort(
     await task_a
     await task_b
     assert len(sent) == 2
+
+
+async def test_geschlossener_transport_wird_vor_dem_naechsten_aufruf_neu_aufgebaut(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ein toter Socket meldet sich nicht, er schweigt nur — `sendto()` verpufft danach still.
+    Vor dem Ausfall am 10.09.2026 half dagegen ausschließlich ein Neuladen der Integration; jetzt
+    erkennt der Adapter den Zustand selbst und holt sich einen frischen Socket.
+    """
+    adapter, transports = await _connected_adapter_with_transports(
+        monkeypatch, _status_responder({"bat_soc": 42})
+    )
+    assert len(transports) == 1
+
+    transports[0].close()  # asyncio hat den Transport fallen lassen
+    state = await adapter.read()
+
+    assert state.soc_percent == 42
+    assert len(transports) == 2  # neuer Socket, neuer Quellport
+
+
+async def test_connection_lost_erzwingt_den_neuaufbau(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Auch ohne `is_closing()` darf ein verlorener Transport nicht weiterbenutzt werden —
+    `connection_lost()` ist das Signal, das bisher komplett fehlte."""
+    adapter, transports = await _connected_adapter_with_transports(
+        monkeypatch, _status_responder({"bat_soc": 7})
+    )
+    transports[0].protocol.connection_lost(OSError("Netzwerk weg"))
+
+    state = await adapter.read()
+
+    assert state.soc_percent == 7
+    assert len(transports) == 2
+
+
+async def test_reconnect_erst_nach_mehreren_erfolglosen_aufrufen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ein einzelnes verlorenes Paket erzwingt noch keinen neuen Socket — erst
+    `_RECONNECT_AFTER_FAILED_CALLS` erfolglose Aufrufe hintereinander tun das."""
+    monkeypatch.setattr(marstek_udp, "_REQUEST_TIMEOUT_S", 0.02)
+    monkeypatch.setattr(marstek_udp, "_REQUEST_RETRIES", 1)
+    monkeypatch.setattr(marstek_udp, "_RECONNECT_AFTER_FAILED_CALLS", 2)
+    adapter, transports = await _connected_adapter_with_transports(
+        monkeypatch, lambda _request: None
+    )
+
+    with pytest.raises(StorageAdapterError):
+        await adapter.read()
+    assert len(transports) == 1  # erster Fehlschlag: Transport bleibt
+
+    with pytest.raises(StorageAdapterError):
+        await adapter.read()  # zweiter Fehlschlag verwirft ihn
+
+    with pytest.raises(StorageAdapterError):
+        await adapter.read()
+    assert len(transports) == 2
+
+
+async def test_erfolgreicher_aufruf_setzt_den_fehlerzaehler_zurueck(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fehlschläge müssen aufeinanderfolgen. Ein zwischenzeitlicher Erfolg beweist, dass der
+    Socket lebt — dann wäre ein Neuaufbau reine Unruhe."""
+    monkeypatch.setattr(marstek_udp, "_REQUEST_TIMEOUT_S", 0.02)
+    monkeypatch.setattr(marstek_udp, "_REQUEST_RETRIES", 1)
+    monkeypatch.setattr(marstek_udp, "_RECONNECT_AFTER_FAILED_CALLS", 2)
+    antwortet = {"aktiv": False}
+
+    def responder(request: dict) -> dict | None:
+        if not antwortet["aktiv"]:
+            return None
+        return {"id": request["id"], "src": "test", "result": {"bat_soc": 33}}
+
+    adapter, transports = await _connected_adapter_with_transports(monkeypatch, responder)
+
+    with pytest.raises(StorageAdapterError):
+        await adapter.read()
+
+    antwortet["aktiv"] = True
+    assert (await adapter.read()).soc_percent == 33
+
+    antwortet["aktiv"] = False
+    with pytest.raises(StorageAdapterError):
+        await adapter.read()
+
+    assert len(transports) == 1
+
+
+async def test_alte_antwort_gilt_nicht_als_antwort_auf_den_naechsten_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Eine verspätete Antwort eines früheren Requests liegt noch in der Queue. Sie darf nicht
+    als Antwort auf den nächsten Aufruf durchgehen — die Queue wird vor dem Senden geleert.
+    Der Request-Zähler beginnt bei 1, die alte Antwort trägt hier bewusst genau diese id."""
+    monkeypatch.setattr(marstek_udp, "_REQUEST_TIMEOUT_S", 0.02)
+    monkeypatch.setattr(marstek_udp, "_REQUEST_RETRIES", 1)
+    adapter, transports = await _connected_adapter_with_transports(
+        monkeypatch, lambda _request: None
+    )
+    alte_antwort = {"id": 1, "src": "test", "result": {"bat_soc": 99}}
+    transports[0].protocol.datagram_received(json.dumps(alte_antwort).encode(), ("127.0.0.1", 0))
+
+    with pytest.raises(StorageAdapterError):
+        await adapter.read()

@@ -11,7 +11,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .adapters.base import StorageAdapter, StorageAdapterError
-from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN
+from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN, FAILED_UPDATE_INTERVAL
 from .models import StorageState
 
 if TYPE_CHECKING:
@@ -60,6 +60,12 @@ class BatteryBridgeCoordinator(DataUpdateCoordinator[StorageState]):
 
     async def _async_update_data(self) -> StorageState:
         try:
-            return await self.adapter.read()
+            state = await self.adapter.read()
         except StorageAdapterError as exc:
+            # Antwortet das Gerät nicht, wird der Takt gestreckt statt unverändert weiterzulaufen
+            # (siehe FAILED_UPDATE_INTERVAL in const.py). `DataUpdateCoordinator` liest
+            # `update_interval` bei jeder Neuplanung frisch, ein Zuweisen genügt.
+            self.update_interval = FAILED_UPDATE_INTERVAL
             raise UpdateFailed(str(exc)) from exc
+        self.update_interval = DEFAULT_UPDATE_INTERVAL
+        return state

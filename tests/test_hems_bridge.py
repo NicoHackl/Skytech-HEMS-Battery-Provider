@@ -386,3 +386,72 @@ async def test_unload_entfernt_auch_den_keepalive_listener(
     await hass.async_block_till_done()
 
     assert calls == []
+
+
+def _hems_bridge_error_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """Nur die ERROR-Zeilen der HEMS-Anbindung — Fremdmeldungen aus HA bleiben außen vor."""
+    return [
+        record
+        for record in caplog.records
+        if record.levelno == logging.ERROR
+        and record.name == "custom_components.battery_bridge.hems_bridge"
+    ]
+
+
+async def test_wiederholter_schreibfehler_wird_nur_einmal_als_fehler_geloggt(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Beim Ausfall am 10.09.2026 standen 114 identische ERROR-Zeilen im Log, eine je
+    Keep-Alive-Takt. Gemeldet wird jetzt nur noch der Beginn einer Ausfallphase."""
+    _calls, _entry = await _setup_entry(hass, monkeypatch)
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_discharge_power",
+        AsyncMock(side_effect=StorageAdapterError("boom")),
+    )
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=StorageAdapterError("boom")),
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+        hass.states.async_set(_POWER_ENTITY, "801")
+        await hass.async_block_till_done()
+        hass.states.async_set(_POWER_ENTITY, "802")
+        await hass.async_block_till_done()
+
+    assert len(_hems_bridge_error_records(caplog)) == 1
+
+
+async def test_erfolgreicher_sync_nach_fehler_meldet_wieder_ok(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Nach einer Ausfallphase gehört die Erholung genauso ins Log wie ihr Beginn — sonst bleibt
+    im Log nur ein Fehler ohne erkennbares Ende stehen."""
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_discharge_power",
+        AsyncMock(side_effect=StorageAdapterError("boom")),
+    )
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    assert entry.runtime_data.hems_bridge.write_ok is False
+
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_discharge_power",
+        AsyncMock(side_effect=lambda watts: calls.append(("discharge", watts))),
+    )
+    with caplog.at_level(logging.WARNING):
+        hass.states.async_set(_POWER_ENTITY, "801")
+        await hass.async_block_till_done()
+
+    assert entry.runtime_data.hems_bridge.write_ok is True
+    assert "setzt den Sollwert wieder" in caplog.text
+

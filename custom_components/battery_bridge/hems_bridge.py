@@ -22,6 +22,13 @@ gesendete Sollwert, unabhängig vom aktuellen Poll-Zustand des Coordinators. Sch
 `docs/bekannte-luecken.md` beschriebene Lücke, dass `number.<prefix>_soll_*` nicht zeigt, was
 diese Anbindung tatsächlich sendet (die schreibt direkt am Adapter vorbei).
 
+`write_ok` ist der zweite Beobachtungspunkt für `sensor.py`: solange er `False` ist, hat der
+zuletzt gesendete Sollwert das Gerät nicht erreicht, und `last_command` beschreibt nicht mehr, was
+am Speicher gilt. Die beiden HEMS-Soll-Sensoren gehen dann bewusst auf „nicht verfügbar", statt
+weiter einen Wert zu zeigen, den niemand bestätigt hat — am 10.09.2026 stand dort 96 Minuten lang
+unverändert `0.0`, während kein einziger Schreibvorgang durchkam (siehe
+`docs/bekannte-luecken.md`, Abschnitt „Verbindung reißt ab").
+
 `enabled`/`async_pause()`/`async_resume()` sind die öffentliche Schnittstelle für `switch.py`
 (D-011): pausiert lässt sich `number.<prefix>_soll_*` von Hand bedienen, ohne dass der nächste
 HEMS-Zyklus es sofort überschreibt. `async_resume()` setzt `_last_applied_mode` zurück, bevor es
@@ -99,6 +106,10 @@ class HemsBridge:
         # dem ersten erfolgreichen Sync — derselbe Leerzustand wie bei `_last_applied_mode`, nie
         # eine geratene 0 vortäuschen.
         self._last_command: HemsCommandState | None = None
+        # Ob der letzte Schreibversuch das Gerät erreicht hat. Startet `True`: vor dem ersten Sync
+        # gibt es keinen Fehlversuch, den man verschweigen könnte — `last_command` ist dann noch
+        # `None`, die Sensoren sind ohnehin nicht verfügbar.
+        self._write_ok = True
         # Steuert, ob _async_sync() automatisch schreibt — für switch.py (D-011). Startet immer
         # aktiv: nach jedem Neustart/Neuladen übernimmt HEMS wieder die Kontrolle, eine Pause
         # übersteht das bewusst nicht (siehe docs/design-entscheidungen.md D-011).
@@ -108,6 +119,11 @@ class HemsBridge:
     def last_command(self) -> HemsCommandState | None:
         """Zuletzt erfolgreich an den Adapter gesendeter Sollwert, `None` vor dem ersten Sync."""
         return self._last_command
+
+    @property
+    def write_ok(self) -> bool:
+        """Ob der letzte Schreibversuch durchkam — für `sensor.py` (siehe Moduldoc)."""
+        return self._write_ok
 
     @property
     def enabled(self) -> bool:
@@ -208,11 +224,28 @@ class HemsBridge:
                 await adapter.write_discharge_power(0)
                 command = HemsCommandState(charge_power_w=0.0, discharge_power_w=0.0)
         except StorageAdapterError as exc:
-            _LOGGER.error(
-                "HEMS-Anbindung (%s) konnte den Sollwert nicht setzen: %s", self._prefix, exc
-            )
+            # Nur der erste Fehlschlag einer Ausfallphase ist eine Fehlermeldung wert. Vorher lief
+            # jeder Keep-Alive-Takt in dieselbe ERROR-Zeile — beim Ausfall am 10.09.2026 waren das
+            # 114 identische Meldungen, die den Blick auf alles andere im Log verstellt haben.
+            if self._write_ok:
+                _LOGGER.error(
+                    "HEMS-Anbindung (%s) konnte den Sollwert nicht setzen: %s", self._prefix, exc
+                )
+                self._write_ok = False
+                # Die HEMS-Soll-Sensoren hängen an `write_ok` (sensor.py). Ohne diesen Anstoß
+                # zeigten sie den jetzt unbestätigten Wert weiter, bis zufällig ein Poll durchläuft.
+                self._coordinator.async_update_listeners()
+            else:
+                _LOGGER.debug(
+                    "HEMS-Anbindung (%s) konnte den Sollwert weiterhin nicht setzen: %s",
+                    self._prefix,
+                    exc,
+                )
             return
 
+        if not self._write_ok:
+            _LOGGER.warning("HEMS-Anbindung (%s) setzt den Sollwert wieder.", self._prefix)
+        self._write_ok = True
         self._last_applied_mode = mode
         self._last_command = command
         await self._coordinator.async_request_refresh()

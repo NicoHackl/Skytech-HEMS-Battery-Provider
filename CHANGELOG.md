@@ -20,6 +20,20 @@ Datei angefasst wurde.
 
 ### Behoben
 
+- Verbindung zum Speicher riss ab und kam nur durch Neuladen der Integration zurück: Fiel die
+  Verbindung einmal aus, blieben alle Entities dauerhaft auf „nicht verfügbar" und es ging kein
+  Sollwert mehr an den Speicher — am 10.09.2026 volle 96 Minuten lang, obwohl das Gerät die ganze
+  Zeit erreichbar war. Die Integration baut die Verbindung jetzt selbst neu auf, sobald sie
+  unbrauchbar geworden ist oder der Speicher mehrfach hintereinander nicht antwortet. Antwortet
+  der Speicher gerade nicht, wird er außerdem seltener abgefragt, statt weiter im Sekundentakt.
+
+- Ein Ausfall der HEMS-Anbindung war nicht zu erkennen: HEMS-Soll-Ladeleistung und
+  HEMS-Soll-Entladeleistung zeigten weiterhin den zuletzt erfolgreich gesendeten Wert, auch wenn
+  seit Stunden kein Sollwert mehr am Speicher ankam. Beide Sensoren stehen jetzt auf „nicht
+  verfügbar", solange die Sollwerte den Speicher nicht erreichen. Im Protokoll erscheint nur noch
+  der Beginn einer Störung als Fehler und ihr Ende als Hinweis, statt derselben Meldung im
+  Minutentakt.
+
 - HEMS-Anbindung konnte den Speicher unbemerkt aus dem Sollwert fallen lassen: Blieb die
   HEMS-Anforderung mehrere Minuten unverändert (z. B. konstant 2500 W), sendete die Integration
   nichts mehr nach — der Speicher fiel nach 5 Minuten aus eigener Sicherheitslogik zurück in

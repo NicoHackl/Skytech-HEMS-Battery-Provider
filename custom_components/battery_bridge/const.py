@@ -32,6 +32,11 @@ MARSTEK_UDP_DEFAULT_PORT: Final = 30000
 MARSTEK_UDP_PORT_RANGE: Final = (1, 65535)
 
 DEFAULT_UPDATE_INTERVAL: Final = timedelta(seconds=1)
+# Poll-Takt, solange das Gerät nicht antwortet (coordinator.py). Ein Speicher, der gerade nicht
+# antwortet, wird nicht weiter im Normaltakt mit je drei Versuchen beschickt — das hilft niemandem
+# und belastet den Netzwerkteil des Geräts weiter. Bleibt weit unter dem 300-s-Watchdog des
+# Passive-Mode, ein erholtes Gerät wird also spätestens eine halbe Minute später wieder erkannt.
+FAILED_UPDATE_INTERVAL: Final = timedelta(seconds=30)
 
 # Keep-Alive-Takt der HEMS-Anbindung (hems_bridge.py, D-012): deutlich unter dem
 # Marstek-Passive-Mode-Watchdog `_PASSIVE_MODE_DURATION_S` (300 s, adapters/marstek_udp.py) —

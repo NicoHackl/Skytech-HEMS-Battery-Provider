@@ -175,8 +175,15 @@ class BatteryBridgeHemsCommandSensor(CoordinatorEntity[BatteryBridgeCoordinator]
         # ein Lesefehler vom Gerät soll den zuletzt gesendeten HEMS-Sollwert nicht verschwinden
         # lassen. Erst verfügbar, sobald die HEMS-Anbindung mindestens einmal erfolgreich
         # geschrieben hat.
-        return self.coordinator.hems_bridge is not None and (
-            self.coordinator.hems_bridge.last_command is not None
+        #
+        # Ein *Schreib*fehler wiegt anders als ein Lesefehler: dann ist unbekannt, ob der zuletzt
+        # gesendete Sollwert am Gerät überhaupt noch gilt. Der Wert verschwindet deshalb, statt
+        # einen unbestätigten Stand vorzutäuschen (siehe hems_bridge.py, `write_ok`).
+        hems_bridge = self.coordinator.hems_bridge
+        return (
+            hems_bridge is not None
+            and hems_bridge.last_command is not None
+            and hems_bridge.write_ok
         )
 
     @property
