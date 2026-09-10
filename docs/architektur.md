@@ -75,6 +75,15 @@ Coordinator und bildet ihn als `sensor.*`-Entities ab. Schlägt eine Abfrage nac
 wirft der Adapter `StorageAdapterError`, der Coordinator übersetzt das in `UpdateFailed` und die
 Entities werden `unavailable` — kein Crash, kein Reload nötig.
 
+**Verbindung und Neuaufbau (D-013):** `connect()` läuft nur ein einziges Mal von außen — HA ruft
+`coordinator._async_setup()` ausschließlich beim ersten Refresh auf. Der Adapter hält seinen
+Transport deshalb selbst instand: er prüft vor jedem Aufruf, ob der Socket noch lebt, und verwirft
+ihn zusätzlich nach mehreren erfolglosen Aufrufen hintereinander, sodass der nächste Aufruf einen
+frischen erzeugt. Ohne das blieb ein einmal gestorbener UDP-Socket bis zum manuellen Neuladen tot
+(96 Minuten am 10.09.2026, siehe [bekannte-luecken.md](bekannte-luecken.md)). Solange das Gerät
+nicht antwortet, streckt der Coordinator zusätzlich seinen Takt von `DEFAULT_UPDATE_INTERVAL` auf
+`FAILED_UPDATE_INTERVAL` (`const.py`), statt unverändert weiterzupollen.
+
 Der Schreibpfad läuft ohne Umweg über den Coordinator: `number.py` ruft bei jeder Wertänderung
 direkt `adapter.write_charge_power()`/`write_discharge_power()` auf, meldet einen Fehlschlag als
 `HomeAssistantError` (nie still) und stößt bei Erfolg `coordinator.async_request_refresh()` an,
@@ -90,7 +99,9 @@ hinterlegt, hört `hems_bridge.py` per `async_track_state_change_event` auf
 `adapter.write_charge_power()`/`write_discharge_power()` auf wie `number.py` — nur ausgelöst durch
 HEMS' eigene Helfer statt durch eine `number.set_value`-Service-Aktion. Ein Fehlschlag wird hier
 nur geloggt, nie als `HomeAssistantError` geworfen (kein Service-Aufrufer, dem ein Toast angezeigt
-werden könnte). Anders als beim manuellen Schreibpfad läuft hier zusätzlich ein
+werden könnte) — dafür setzt er `HemsBridge.write_ok` auf `False`, woraufhin die beiden
+HEMS-Soll-Sensoren auf `unavailable` gehen, statt einen unbestätigten Sollwert weiterzuzeigen
+(D-013). Anders als beim manuellen Schreibpfad läuft hier zusätzlich ein
 Keep-Alive-Timer (`HEMS_KEEPALIVE_INTERVAL`, 60 s): SkytechHEMS sendet nachweislich nicht erneut,
 solange sich die Anforderung nicht ändert, der `cd_time`-Watchdog verlangt aber unabhängig davon
 einen neuen Aufruf — ohne den Timer fiele der Speicher nach 300 s aus dem Sollwert, obwohl die

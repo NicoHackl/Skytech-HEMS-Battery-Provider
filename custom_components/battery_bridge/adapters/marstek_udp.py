@@ -16,6 +16,18 @@ ist ein Sicherheits-Watchdog: läuft er ab, ohne dass ein neuer Sollwert kommt, 
 zurück in den vorherigen Modus — kein Sollwert bleibt für immer erzwungen, wenn HA nicht mehr
 antwortet. **Trotzdem unverifiziert an echter Hardware** (Plan Abschnitt 5, M1-Abnahme) — vor dem
 produktiven Einsatz prüfen, siehe docs/bekannte-luecken.md.
+
+Verbindungsabbruch und Neuaufbau: Der UDP-Transport wird nicht mehr nur einmal beim Einrichten
+erzeugt. Home Assistant ruft `connect()` von sich aus genau einmal auf (über
+`coordinator._async_setup()`, das nur beim ersten Refresh läuft) — stirbt der Socket danach, bleibt
+er tot, und `sendto()` verpufft ab da still, ohne Exception. Am 10.09.2026 lief die Anbindung so
+96 Minuten ins Leere (04:09 bis 05:45), obwohl das Gerät erreichbar war: der erste Schreibvorgang
+auf einem frisch erzeugten Socket war unmittelbar nach dem Neuladen der Integration erfolgreich.
+Deshalb prüft dieser Adapter vor jedem Aufruf selbst, ob der Transport noch lebt
+(`connection_lost`, `is_closing()`), und verwirft ihn zusätzlich nach
+`_RECONNECT_AFTER_FAILED_CALLS` erfolglosen Aufrufen — der Neuaufbau vergibt einen neuen Quellport
+und entspricht damit dem, was bisher nur ein manuelles Neuladen bewirkt hat. Details:
+docs/bekannte-luecken.md, Abschnitt „Verbindung reißt ab" und docs/adr/D-013-udp-reconnect.md.
 """
 
 from __future__ import annotations
@@ -36,6 +48,12 @@ _METHOD_ES_GET_STATUS = "ES.GetStatus"
 _METHOD_ES_SET_MODE = "ES.SetMode"
 _REQUEST_TIMEOUT_S = 1.0
 _REQUEST_RETRIES = 3
+# Nach so vielen aufeinanderfolgend erfolglosen Aufrufen wird der UDP-Transport verworfen und beim
+# nächsten Aufruf neu aufgebaut (siehe Moduldoc). Ein erfolgloser Aufruf dauert bereits
+# `_REQUEST_RETRIES` × `_REQUEST_TIMEOUT_S`; zwei davon hintereinander sind damit wenige Sekunden —
+# träge genug, dass ein einzelnes verlorenes Paket nicht sofort einen neuen Socket erzwingt, und
+# schnell genug, um weit unter dem 300-s-Watchdog des Passive-Mode zu bleiben.
+_RECONNECT_AFTER_FAILED_CALLS = 2
 # Sicherheits-Watchdog für den Passive-Mode-Sollwert (siehe Moduldoc) — Default von
 # leonscheltema/ha-marstek übernommen, dort ebenfalls der Standardwert der Entity.
 _PASSIVE_MODE_DURATION_S = 300
@@ -46,12 +64,26 @@ class _MarstekUdpProtocol(asyncio.DatagramProtocol):
 
     def __init__(self) -> None:
         self.queue: asyncio.Queue[bytes] = asyncio.Queue()
+        # Lässt asyncio den Transport fallen, verpufft jedes weitere `sendto()` still — ohne
+        # Exception, ohne Rückmeldung. Dieser Merker ist die einzige Stelle, an der das überhaupt
+        # sichtbar wird (siehe Moduldoc, Vorfall vom 10.09.2026).
+        self.lost = False
+        self.last_error: Exception | None = None
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         self.queue.put_nowait(data)
 
     def error_received(self, exc: Exception) -> None:
+        self.last_error = exc
         _LOGGER.debug("UDP-Fehler vom Marstek-Gerät: %s", exc)
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        self.lost = True
+        if exc is None:
+            # Regulärer close() beim Entladen der Integration — kein Fehlerfall.
+            _LOGGER.debug("UDP-Verbindung zum Marstek-Gerät regulär geschlossen.")
+            return
+        _LOGGER.warning("UDP-Verbindung zum Marstek-Gerät unerwartet beendet: %s", exc)
 
 
 class MarstekUdpAdapter:
@@ -75,6 +107,15 @@ class MarstekUdpAdapter:
         # ES.SetMode (sehr häufig durch die HEMS-Anbindung ausgelöst) timeoutet praktisch
         # immer, ES.GetStatus (fester 5-s-Takt) nur gelegentlich.
         self._call_lock = asyncio.Lock()
+        # Ob überhaupt schon einmal `connect()` lief. Bewusst getrennt vom Zustand des Transports:
+        # ein toter Transport wird selbst neu aufgebaut, ein nie verbundener Adapter meldet
+        # dagegen weiterhin einen sprechenden Fehler statt still eine Verbindung aufzumachen.
+        self._connected = False
+        # Aufeinanderfolgend erfolglose Aufrufe, siehe `_RECONNECT_AFTER_FAILED_CALLS`.
+        self._failed_calls = 0
+        # Ob der Neuaufbau in der laufenden Ausfallphase schon gemeldet wurde, siehe
+        # `_log_reconnect()`.
+        self._reconnect_logged = False
 
     async def connect(self) -> None:
         loop = asyncio.get_running_loop()
@@ -87,12 +128,59 @@ class MarstekUdpAdapter:
             raise StorageAdapterError(
                 f"Marstek-Gerät {self._host}:{self._port} nicht erreichbar: {exc}"
             ) from exc
+        self._connected = True
+        self._failed_calls = 0
 
     async def close(self) -> None:
+        self._close_transport()
+        self._connected = False
+        self._failed_calls = 0
+        self._reconnect_logged = False
+
+    def _close_transport(self) -> None:
+        """Nur den Transport wegwerfen — der Adapter gilt weiterhin als verbunden.
+
+        Gegenstück zu `close()`: dort endet die Adapter-Lebensdauer (Entry wird entladen), hier
+        wird lediglich ein unbrauchbar gewordener Socket verworfen, damit der nächste Aufruf
+        einen frischen erzeugt.
+        """
         if self._transport is not None:
             self._transport.close()
         self._transport = None
         self._protocol = None
+
+    def _is_connection_dead(self) -> bool:
+        """Ob der aktuelle Transport nicht mehr benutzbar ist."""
+        return (
+            self._transport is None
+            or self._protocol is None
+            or self._protocol.lost
+            or self._transport.is_closing()
+        )
+
+    async def _async_ensure_connection(self) -> None:
+        """Vor jedem Aufruf sicherstellen, dass ein lebender Transport da ist (siehe Moduldoc)."""
+        if not self._is_connection_dead():
+            return
+        if self._transport is not None:
+            # Der Transport hat sich selbst verabschiedet — genau der Fall, der bisher gar nicht
+            # auffiel. Wurde er dagegen weiter unten selbst verworfen, ist das schon gemeldet.
+            self._log_reconnect("der bisherige Socket ist nicht mehr benutzbar")
+        self._close_transport()
+        await self.connect()
+
+    def _log_reconnect(self, reason: str) -> None:
+        """Den Neuaufbau melden: einmal je Ausfallphase deutlich, danach nur noch im Debug-Log.
+
+        Ein stundenlanger Ausfall soll nicht dieselbe Zeile im Minutentakt ins Log schreiben —
+        derselbe Gedanke wie bei den Schreibfehlern in `hems_bridge.py`.
+        """
+        message = "Verbindung zum Marstek-Gerät %s:%s wird neu aufgebaut: %s"
+        if self._reconnect_logged:
+            _LOGGER.debug(message, self._host, self._port, reason)
+            return
+        self._reconnect_logged = True
+        _LOGGER.warning(message, self._host, self._port, reason)
 
     async def read(self) -> StorageState:
         result = await self._call(_METHOD_ES_GET_STATUS, {"id": 0})
@@ -153,7 +241,7 @@ class MarstekUdpAdapter:
             raise StorageAdapterError(f"Marstek-Gerät hat den Sollwert abgelehnt: {result!r}")
 
     async def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        if self._transport is None or self._protocol is None:
+        if not self._connected:
             raise StorageAdapterError("Adapter ist nicht verbunden — connect() nicht aufgerufen.")
 
         # Serialisiert — siehe Kommentar zu `_call_lock` in __init__(). Ohne diesen Lock teilen
@@ -163,6 +251,14 @@ class MarstekUdpAdapter:
             return await self._call_locked(method, params)
 
     async def _call_locked(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        await self._async_ensure_connection()
+        # Verspätete Antworten auf einen früheren, längst abgelaufenen Request liegen sonst noch
+        # in der Queue. Die id-Prüfung unten würde sie zwar verwerfen, aber erst nachdem sie aus
+        # der Queue geholt wurden — einmal vorab leerräumen ist billiger und eindeutiger.
+        queue = self._protocol.queue
+        while not queue.empty():
+            queue.get_nowait()
+
         request_id = next(self._request_ids)
         payload = json.dumps({"id": request_id, "method": method, "params": params}).encode()
         loop = asyncio.get_running_loop()
@@ -191,6 +287,11 @@ class MarstekUdpAdapter:
                 if response.get("id") != request_id:
                     continue  # verspätete Antwort auf einen älteren Request, verwerfen
 
+                # Ab hier hat das Gerät nachweislich geantwortet — auch eine Fehlerantwort ist
+                # ein Lebenszeichen des Transports. Damit endet die Ausfallphase: Zähler und
+                # Melde-Sperre gehören zurückgesetzt.
+                self._failed_calls = 0
+                self._reconnect_logged = False
                 if "result" not in response:
                     raise StorageAdapterError(
                         f"Marstek-Gerät meldet einen Fehler auf {method}: {response!r}"
@@ -201,6 +302,14 @@ class MarstekUdpAdapter:
                 "Marstek %s:%s antwortet nicht auf %s (Versuch %s/%s)",
                 self._host, self._port, method, attempt, _REQUEST_RETRIES,
             )
+
+        self._failed_calls += 1
+        if self._failed_calls >= _RECONNECT_AFTER_FAILED_CALLS:
+            self._log_reconnect(
+                f"das Gerät antwortet seit {self._failed_calls} Aufrufen nicht"
+            )
+            self._close_transport()
+            self._failed_calls = 0
 
         raise StorageAdapterError(
             f"Marstek {self._host}:{self._port} antwortet nach {_REQUEST_RETRIES} Versuchen "

@@ -200,6 +200,77 @@ Zero-Zwischenschritt bei unveränderter Betriebsart (bestehende `mode_changed`-L
 `test_unload_entfernt_auch_den_keepalive_listener`. Ausführlich:
 [ADR D-012](adr/D-012-hems-keepalive.md).
 
+## Verbindung reißt ab, nur Neuladen half (gemeldet 10.09.2026, behoben)
+
+User-Beobachtung: Über mehrere Stunden/Tage standen sämtliche Entities des Speichers auf „nicht
+verfügbar", die HEMS-Anbindung setzte keinen Sollwert mehr. Nach einem Neuladen der Integration
+lief wieder alles.
+
+Per HA-Verlauf (`sensor.<prefix>_ladezustand`, `switch.<prefix>_hems_steuerung`) und Systemlog
+rekonstruiert — vier Ausfälle:
+
+| Beginn | Ende | Dauer | Ausgang |
+|---|---|---|---|
+| 09.09.2026 03:54:46 | 03:56:31 | 105 s | selbst erholt |
+| 09.09.2026 11:11:06 | 11:22:45 | 11,6 min | selbst erholt |
+| 10.09.2026 03:21:52 | 03:21:55 | 3 s | selbst erholt |
+| 10.09.2026 04:09:31 | 05:45:43 | 96 min | erst durch Neuladen |
+
+Im gesamten Zeitraum 114 Meldungen im 60-s-Takt des Keep-Alive:
+`Marstek <host>:30000 antwortet nach 3 Versuchen nicht auf ES.SetMode.`
+
+**Beweis, dass nicht das Gerät weg war:** `sensor.<prefix>_hems_soll_entladeleistung` ging um
+05:45:43.358 auf `unavailable` (Entry wird entladen) und um 05:45:43.703 zurück auf `0.0` (Entry
+wieder eingerichtet). Dieser Sensor zeigt nur dann einen Wert, wenn die HEMS-Anbindung mindestens
+einmal erfolgreich geschrieben hat — der erste Schreibvorgang auf dem frisch erzeugten Socket kam
+also binnen 345 ms durch. Der Speicher war die ganze Zeit erreichbar, tot war der UDP-Socket.
+Als Nebenursache ausgeschlossen: die parallel installierte Modbus-Integration für dasselbe Gerät
+ist in HA deaktiviert und nicht geladen, es gab also keinen zweiten Client.
+
+**Ursache:** `adapters/marstek_udp.py` erzeugte seinen Transport genau einmal. Home Assistant ruft
+`connect()` nur aus `coordinator._async_setup()` auf, und das läuft ausschließlich beim ersten
+Refresh eines Entry. Stirbt der Socket danach, ist jedes weitere `sendto()` ein stiller No-Op —
+keine Exception, kein Logeintrag; aus Adaptersicht sieht das aus wie ein Gerät, das nicht mehr
+antwortet. `_MarstekUdpProtocol` implementierte kein `connection_lost()`, und `_call()` prüfte nur
+auf `self._transport is None`, was ausschließlich beim Entladen des Entry eintritt. Es gab keinen
+Weg zurück außer Neuladen.
+
+**Fix (D-013):** Der Adapter prüft vor jedem Aufruf selbst, ob der Transport noch lebt
+(`connection_lost()`, `is_closing()`), und verwirft ihn zusätzlich nach
+`_RECONNECT_AFTER_FAILED_CALLS` (2) erfolglosen Aufrufen hintereinander — der nächste Aufruf
+erzeugt dann einen frischen Socket mit neuem Quellport, also genau das, was vorher nur ein
+manuelles Neuladen bewirkt hat. Die Antwort-Queue wird vor jedem Aufruf geleert, damit eine
+verspätete Antwort eines abgelaufenen Requests nicht im nächsten Aufruf landet. Während eines
+Ausfalls streckt der Coordinator seinen Takt auf `FAILED_UPDATE_INTERVAL` (30 s), statt weiter im
+Normaltakt mit je drei Versuchen zu senden. Tests:
+`test_geschlossener_transport_wird_vor_dem_naechsten_aufruf_neu_aufgebaut`,
+`test_connection_lost_erzwingt_den_neuaufbau`,
+`test_reconnect_erst_nach_mehreren_erfolglosen_aufrufen`,
+`test_erfolgreicher_aufruf_setzt_den_fehlerzaehler_zurueck`,
+`test_alte_antwort_gilt_nicht_als_antwort_auf_den_naechsten_request`,
+`test_poll_intervall_wird_bei_fehler_gestreckt_und_bei_erfolg_zurueckgesetzt`. Ausführlich:
+[ADR D-013](adr/D-013-udp-reconnect.md).
+
+**Zeitliche Korrelation, bewusst nicht angefasst:** Am 08.09.2026 um 09:22 wurde
+`DEFAULT_UPDATE_INTERVAL` von 5 s auf 1 s gesenkt (Commit `2e79878`, über `origin/main` `8062b7f`
+ausgeliefert — genau der Stand, der zum Zeitpunkt der Ausfälle lief). Der erste Ausfall trat am
+Folgetag auf, davor gab es keinen. Ein Poll je Sekunde ist für den Netzwerkteil des Marstek viel:
+ein erfolgloser Poll blockiert bereits drei Sekunden (drei Versuche à 1 s), und derselbe
+`_call_lock` trägt zusätzlich die Schreibvorgänge der HEMS-Anbindung. Bewiesen ist der
+Zusammenhang nicht, plausibel schon. Der Takt bleibt auf ausdrücklichen Wunsch des Users bei 1 s —
+der Reconnect oben ist die Absicherung darunter. **Treten weiterhin Ausfälle auf, ist der
+Poll-Takt der erste Kandidat**, bevor an anderer Stelle gesucht wird.
+
+**Zweiter Teil des Fixes — der Ausfall war unsichtbar:** `sensor.<prefix>_hems_soll_entladeleistung`
+zeigte die vollen 96 Minuten unverändert `0.0`, weil die beiden HEMS-Soll-Sensoren nur am zuletzt
+*erfolgreichen* Schreibvorgang hängen. `hems_bridge.py` führt jetzt `write_ok`: solange der letzte
+Schreibversuch gescheitert ist, sind beide Sensoren „nicht verfügbar", statt einen Wert zu zeigen,
+den niemand bestätigt hat. Gemeldet wird außerdem nur noch der Beginn einer Ausfallphase als
+Fehler und ihr Ende als Warnung — vorher stand dieselbe Zeile 114-mal im Log. Tests:
+`test_wiederholter_schreibfehler_wird_nur_einmal_als_fehler_geloggt`,
+`test_erfolgreicher_sync_nach_fehler_meldet_wieder_ok`,
+`test_hems_sensoren_sind_bei_schreibfehler_nicht_verfuegbar`.
+
 ## Stolpersteine
 
 Dinge, die schon einmal Zeit gekostet haben:
@@ -219,7 +290,10 @@ Dinge, die schon einmal Zeit gekostet haben:
   03.09.2026: Entity zeigte `0.0`, während die Anlage mit −417 W entlud). Kein Bug im Sinne von
   falschem Verhalten — Adapter-Aufruf und Entity-Anzeige sind schlicht zwei getrennte Pfade —
   aber irreführend für jeden, der aus der Entity-Anzeige den aktuellen Sollwert abliest, solange
-  eine HEMS-Anbindung aktiv ist. **Verhalten von `number.py` bleibt unverändert** (Absicht: die
+  eine HEMS-Anbindung aktiv ist. Seit D-013 gilt zusätzlich: erreichen die Sollwerte das Gerät
+  nicht mehr, verschwinden die HEMS-Soll-Sensoren, statt einen unbestätigten Stand
+  weiterzuzeigen — `number.<prefix>_soll_*` bleibt davon unberührt und zeigt weiterhin nur, was
+  zuletzt von Hand über die Entity gesetzt wurde. **Verhalten von `number.py` bleibt unverändert** (Absicht: die
   Number-Entities sind für manuelles Bedienen da, nicht als Anzeige der HEMS-Anbindung) — seit
   0.3.0 gibt es aber einen korrekten Ablesepunkt daneben:
   `sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` zeigen genau den Wert,
