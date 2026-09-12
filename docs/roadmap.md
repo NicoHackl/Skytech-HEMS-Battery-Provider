@@ -51,7 +51,7 @@ zusätzlich: erster Testlauf mit kleinem Sollwert, nicht mit einem produktionsna
 | `number.py` | fertig | |
 | An echter Hardware bestätigen: Vorzeichen von `power` | offen | [bekannte-luecken.md](bekannte-luecken.md) |
 | Watchdog-Verhalten nach `cd_time` | fertig — bestätigt per HA-Verlauf, Keep-Alive ergänzt, D-012 | [bekannte-luecken.md](bekannte-luecken.md) |
-| Reaktionszeit an echter Hardware messen, Poll-Intervall justieren | offen | |
+| Poll-Intervall justieren | fertig — pro Gerät konfigurierbar, D-014 | [design-entscheidungen.md](design-entscheidungen.md) |
 
 ### M3 — HEMS-Anbindung
 

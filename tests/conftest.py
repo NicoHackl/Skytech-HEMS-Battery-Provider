@@ -11,6 +11,8 @@ from custom_components.battery_bridge.const import (
     CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL_SECONDS,
     DOMAIN,
     MANUFACTURER_MARSTEK,
     PROTOCOL_MARSTEK_UDP,
@@ -23,11 +25,14 @@ def make_marstek_entry(
     port: int = 30000,
     title: str = "Marstek 127.0.0.1",
     hems_entity_prefix: str | None = None,
+    update_interval_seconds: int = DEFAULT_UPDATE_INTERVAL_SECONDS,
 ) -> MockConfigEntry:
     """Ein `MockConfigEntry`, wie ihn der echte Config-Flow für Marstek/UDP anlegen würde.
 
     `hems_entity_prefix` entspricht dem gleichnamigen, optionalen Config-Flow-Feld — gesetzt,
     wenn ein Test die eingebaute HEMS-Anbindung (hems_bridge.py) mit einrichten soll.
+    `update_interval_seconds` landet in `entry.options`, nicht `entry.data` — genau wie beim
+    echten Config- und Options-Flow (D-014).
     """
     return MockConfigEntry(
         domain=DOMAIN,
@@ -40,6 +45,7 @@ def make_marstek_entry(
             CONF_PORT: port,
             CONF_HEMS_ENTITY_PREFIX: hems_entity_prefix,
         },
+        options={CONF_UPDATE_INTERVAL: update_interval_seconds},
     )
 
 

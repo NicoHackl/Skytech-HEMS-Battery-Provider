@@ -251,15 +251,18 @@ Normaltakt mit je drei Versuchen zu senden. Tests:
 `test_poll_intervall_wird_bei_fehler_gestreckt_und_bei_erfolg_zurueckgesetzt`. Ausführlich:
 [ADR D-013](adr/D-013-udp-reconnect.md).
 
-**Zeitliche Korrelation, bewusst nicht angefasst:** Am 08.09.2026 um 09:22 wurde
-`DEFAULT_UPDATE_INTERVAL` von 5 s auf 1 s gesenkt (Commit `2e79878`, über `origin/main` `8062b7f`
+**Zeitliche Korrelation, mittlerweile behoben (D-014):** Am 08.09.2026 um 09:22 wurde das
+Poll-Intervall von 5 s auf 1 s gesenkt (Commit `2e79878`, über `origin/main` `8062b7f`
 ausgeliefert — genau der Stand, der zum Zeitpunkt der Ausfälle lief). Der erste Ausfall trat am
 Folgetag auf, davor gab es keinen. Ein Poll je Sekunde ist für den Netzwerkteil des Marstek viel:
 ein erfolgloser Poll blockiert bereits drei Sekunden (drei Versuche à 1 s), und derselbe
 `_call_lock` trägt zusätzlich die Schreibvorgänge der HEMS-Anbindung. Bewiesen ist der
-Zusammenhang nicht, plausibel schon. Der Takt bleibt auf ausdrücklichen Wunsch des Users bei 1 s —
-der Reconnect oben ist die Absicherung darunter. **Treten weiterhin Ausfälle auf, ist der
-Poll-Takt der erste Kandidat**, bevor an anderer Stelle gesucht wird.
+Zusammenhang nicht, plausibel schon. Das Intervall ist seit D-014 kein globaler Fixwert mehr,
+sondern pro Gerät über Config-/Options-Flow konfigurierbar (`CONF_UPDATE_INTERVAL`, 1–60 s,
+Default 5 s) — der Reconnect oben bleibt die Absicherung darunter, unabhängig vom gewählten Takt.
+Der User hat daneben eine eigene, nicht Teil dieser Integration seiende Alternativlösung für eine
+schnelle Leistungsabfrage. **Treten weiterhin Ausfälle auf, ist ein zu niedrig gewähltes
+Poll-Intervall der erste Kandidat**, bevor an anderer Stelle gesucht wird.
 
 **Zweiter Teil des Fixes — der Ausfall war unsichtbar:** `sensor.<prefix>_hems_soll_entladeleistung`
 zeigte die vollen 96 Minuten unverändert `0.0`, weil die beiden HEMS-Soll-Sensoren nur am zuletzt

@@ -9,6 +9,13 @@ optional einem `hems_entity_prefix` (aktiviert die eingebaute HEMS-Anbindung, si
 [api-referenz.md](api-referenz.md), leer = deaktiviert). HA speichert diese Werte selbst
 (`.storage/core.config_entries`), diese Integration verwaltet keinen eigenen Konfigurationsspeicher.
 
+Das Abfrageintervall (`update_interval_seconds`, D-014) wird beim Einrichten mit abgefragt —
+Default 5 Sekunden, erlaubter Bereich 1–60 Sekunden, ganzzahlig — und liegt in `entry.options`,
+nicht `entry.data`. Über den Options-Flow des Entries (Zahnrad-Symbol in der HA-Oberfläche) lässt
+es sich jederzeit nachträglich ändern, ohne das Gerät neu einzurichten; der Entry lädt sich dabei
+automatisch neu, die Änderung wirkt ohne HA-Neustart. Bestandsgeräte ohne gesetzten Wert laufen
+mit dem Default (5 s).
+
 ## Konfigurationsdateien
 
 | Datei | Zweck | Eingecheckt |
