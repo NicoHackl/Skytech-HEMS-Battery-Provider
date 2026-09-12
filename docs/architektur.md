@@ -51,9 +51,9 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
 
 | Komponente | Verantwortung | Darf nicht |
 |---|---|---|
-| `config_flow.py` | Hersteller/Protokoll wählen, Verbindungsdaten abfragen, Verbindungstest vor Anlage des Entry | Speicherzustand lesen/schreiben außerhalb des einmaligen Tests |
+| `config_flow.py` | Hersteller/Protokoll wählen, Verbindungsdaten und Abfrageintervall abfragen, Verbindungstest vor Anlage des Entry; Options-Flow zum nachträglichen Ändern des Abfrageintervalls (D-014) | Speicherzustand lesen/schreiben außerhalb des einmaligen Tests |
 | `adapters/*.py` (`StorageAdapter`) | Ein Protokoll/Hersteller sprechen: `connect()`/`read()`/`write_*()`/`close()` | Wissen, wie Coordinator oder Platforms mit den Daten umgehen |
-| `coordinator.py` | Adapter im Poll-Intervall abfragen, `StorageState` an Platforms verteilen, Fehler in `UpdateFailed`/`ConfigEntryNotReady` übersetzen | Herstellerspezifisches Protokoll kennen — nur über `StorageAdapter` |
+| `coordinator.py` | Adapter im je Entry konfigurierten Poll-Intervall abfragen (D-014), `StorageState` an Platforms verteilen, Fehler in `UpdateFailed`/`ConfigEntryNotReady` übersetzen | Herstellerspezifisches Protokoll kennen — nur über `StorageAdapter` |
 | `sensor.py` | `StorageState`-Felder als HA-Entities abbilden; bei aktiver HEMS-Anbindung zusätzlich `HemsBridge.last_command` (siehe unten) | Eigene Poll- oder Verbindungslogik — das ist Aufgabe des Coordinators/Adapters |
 | `number.py` | Soll-Werte entgegennehmen, Schreibaufrufe an den Adapter durchreichen, Fehler als HA-Fehler melden | Eigene Poll- oder Verbindungslogik |
 | `hems_bridge.py` (optional, nur mit HEMS-Präfix) | HEMS' Anforderungshelfer (`input_number`/`input_select`) beobachten, bei Änderung 1:1 in Adapter-Schreibaufrufe übersetzen (D-009) | Eigene Regel- oder Verteilungslogik — nur Übersetzung; andere Entities als die eigenen HEMS-Helfer lesen |
@@ -65,15 +65,22 @@ ist das eine Design-Entscheidung → [design-entscheidungen.md](design-entscheid
 ## Datenfluss
 
 `config_flow.py` legt pro physischem Speicher einen `ConfigEntry` an (Hersteller, Protokoll,
-Verbindungsdaten), nach einem erfolgreichen Verbindungstest (`adapter.connect()` + `read()`).
-`__init__.py` baut daraus den passenden Adapter, erzeugt einen `BatteryBridgeCoordinator`
-(`coordinator.py`) und ruft `async_config_entry_first_refresh()` — schlägt das fehl, kommt
-`ConfigEntryNotReady`, HA versucht den Start automatisch erneut. Danach fragt der Coordinator im
-festen Poll-Intervall `StorageAdapter.read()` ab und erhält ein `StorageState`
-(Schema: [datenmodell.md](datenmodell.md)). `sensor.py` liest den zuletzt bekannten Zustand vom
-Coordinator und bildet ihn als `sensor.*`-Entities ab. Schlägt eine Abfrage nach Retries fehl,
-wirft der Adapter `StorageAdapterError`, der Coordinator übersetzt das in `UpdateFailed` und die
-Entities werden `unavailable` — kein Crash, kein Reload nötig.
+Verbindungsdaten), nach einem erfolgreichen Verbindungstest (`adapter.connect()` + `read()`). Das
+Abfrageintervall (`CONF_UPDATE_INTERVAL`, D-014) landet dabei in `entry.options`, nicht
+`entry.data` — einzige Quelle der Wahrheit, die auch der zugehörige Options-Flow später
+beschreibt. `__init__.py` baut daraus den passenden Adapter, liest das konfigurierte Intervall aus
+`entry.options` (Default `DEFAULT_UPDATE_INTERVAL_SECONDS`, falls nicht gesetzt), erzeugt einen
+`BatteryBridgeCoordinator` (`coordinator.py`) damit und ruft `async_config_entry_first_refresh()`
+— schlägt das fehl, kommt `ConfigEntryNotReady`, HA versucht den Start automatisch erneut. Danach
+fragt der Coordinator im konfigurierten Poll-Intervall `StorageAdapter.read()` ab und erhält ein
+`StorageState` (Schema: [datenmodell.md](datenmodell.md)). `sensor.py` liest den zuletzt bekannten
+Zustand vom Coordinator und bildet ihn als `sensor.*`-Entities ab. Schlägt eine Abfrage nach
+Retries fehl, wirft der Adapter `StorageAdapterError`, der Coordinator übersetzt das in
+`UpdateFailed` und die Entities werden `unavailable` — kein Crash, kein Reload nötig.
+
+Ändert der Options-Flow das Abfrageintervall nachträglich, registriert `__init__.py` dafür einen
+`update_listener`, der den Entry automatisch per `hass.config_entries.async_reload()` neu lädt —
+die Änderung wirkt also ohne HA-Neustart (D-014).
 
 **Verbindung und Neuaufbau (D-013):** `connect()` läuft nur ein einziges Mal von außen — HA ruft
 `coordinator._async_setup()` ausschließlich beim ersten Refresh auf. Der Adapter hält seinen
@@ -81,7 +88,7 @@ Transport deshalb selbst instand: er prüft vor jedem Aufruf, ob der Socket noch
 ihn zusätzlich nach mehreren erfolglosen Aufrufen hintereinander, sodass der nächste Aufruf einen
 frischen erzeugt. Ohne das blieb ein einmal gestorbener UDP-Socket bis zum manuellen Neuladen tot
 (96 Minuten am 10.09.2026, siehe [bekannte-luecken.md](bekannte-luecken.md)). Solange das Gerät
-nicht antwortet, streckt der Coordinator zusätzlich seinen Takt von `DEFAULT_UPDATE_INTERVAL` auf
+nicht antwortet, streckt der Coordinator zusätzlich seinen Takt vom konfigurierten Normaltakt auf
 `FAILED_UPDATE_INTERVAL` (`const.py`), statt unverändert weiterzupollen.
 
 Der Schreibpfad läuft ohne Umweg über den Coordinator: `number.py` ruft bei jeder Wertänderung
@@ -133,7 +140,7 @@ custom_components/battery_bridge/
 ├── __init__.py                # Setup/Unload ConfigEntry, Adapter+Coordinator anlegen, PLATFORMS
 ├── manifest.json               # domain, name, codeowners, requirements, iot_class: local_polling
 ├── config_flow.py               # Schritt 1: Hersteller wählen · Schritt 2: Verbindungsdaten je Hersteller
-├── const.py                     # DOMAIN, Config-Keys, Poll-Intervall, Hersteller-/Protokoll-IDs
+├── const.py                     # DOMAIN, Config-Keys, Poll-Intervall-Default/-Grenzen, Hersteller-/Protokoll-IDs
 ├── coordinator.py                # BatteryBridgeCoordinator(DataUpdateCoordinator[StorageState])
 ├── models.py                      # StorageState (Dataclass)
 ├── adapters/

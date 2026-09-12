@@ -13,10 +13,22 @@ Datei angefasst wurde.
 
 ### Hinzugefügt
 
+- Abfrageintervall pro Speicher einstellbar: Beim Einrichten lässt sich jetzt festlegen, wie oft
+  ein Speicher abgefragt wird (1–60 Sekunden). Über die Optionen des Geräts (Zahnrad-Symbol) lässt
+  sich der Wert später jederzeit ändern, ohne den Speicher neu einzurichten — die Änderung wirkt
+  sofort, ohne Neustart von Home Assistant.
+
 - Markenicon hinterlegt: Die Integration erscheint jetzt mit eigenem Icon statt Platzhalter, u. a.
   bei Geräten & Diensten und im HACS-Store.
 
 - Lizenz festgelegt: MIT.
+
+### Geändert
+
+- Abfrageintervall standardmäßig jetzt 5 Sekunden statt fix 1 Sekunde: Der bisherige
+  Sekundentakt führte zu Aussetzern am Speicher. Bereits eingerichtete Speicher übernehmen mit
+  diesem Update automatisch den neuen Standardwert, sofern kein eigener Wert gesetzt wird — bei
+  Bedarf über die Optionen des Geräts anpassbar.
 
 ### Behoben
 

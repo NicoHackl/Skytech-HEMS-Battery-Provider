@@ -18,6 +18,8 @@ from custom_components.battery_bridge.const import (
     CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL_SECONDS,
     DOMAIN,
     MANUFACTURER_MARSTEK,
     PROTOCOL_MARSTEK_UDP,
@@ -67,8 +69,50 @@ async def test_erfolgreicher_flow_legt_entry_mit_verbindungsdaten_an(
         CONF_PORT: 30000,
         CONF_HEMS_ENTITY_PREFIX: None,
     }
+    assert result["options"] == {CONF_UPDATE_INTERVAL: DEFAULT_UPDATE_INTERVAL_SECONDS}
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert entry.unique_id == "192.168.1.42:30000"
+
+
+async def test_abfrageintervall_wird_in_die_optionen_uebernommen(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ein im Config-Flow angegebenes Abfrageintervall landet in `entry.options`, nicht `data`."""
+    monkeypatch.setattr(MarstekUdpAdapter, "connect", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "read", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "close", AsyncMock(return_value=None))
+
+    marstek_step = await _start_marstek_step(hass)
+    result = await hass.config_entries.flow.async_configure(
+        marstek_step["flow_id"],
+        {CONF_HOST: "192.168.1.42", CONF_PORT: 30000, CONF_UPDATE_INTERVAL: 20},
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["options"] == {CONF_UPDATE_INTERVAL: 20}
+    assert CONF_UPDATE_INTERVAL not in result["data"]
+
+
+async def test_abfrageintervall_ausserhalb_bereich_zeigt_formular_mit_fehler(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Werte außerhalb 1–60 s lösen einen Feldfehler aus, kein Verbindungstest, kein Entry."""
+    connect_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(MarstekUdpAdapter, "connect", connect_mock)
+    monkeypatch.setattr(MarstekUdpAdapter, "read", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "close", AsyncMock(return_value=None))
+
+    marstek_step = await _start_marstek_step(hass)
+    result = await hass.config_entries.flow.async_configure(
+        marstek_step["flow_id"],
+        {CONF_HOST: "192.168.1.42", CONF_PORT: 30000, CONF_UPDATE_INTERVAL: 61},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "marstek_udp"
+    assert result["errors"] == {CONF_UPDATE_INTERVAL: "invalid_update_interval"}
+    assert hass.config_entries.async_entries(DOMAIN) == []
+    connect_mock.assert_not_called()
 
 
 async def test_hems_praefix_wird_in_den_entry_uebernommen(

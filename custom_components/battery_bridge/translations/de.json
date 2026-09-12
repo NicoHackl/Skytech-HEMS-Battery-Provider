@@ -15,15 +15,31 @@
           "display_name": "Anzeigename (optional)",
           "host": "IP-Adresse",
           "port": "UDP-Port",
-          "hems_entity_prefix": "SkytechHEMS-Präfix (optional, z. B. \"acspeicher1\") — bindet diesen Speicher direkt an SkytechHEMS an. Leer lassen, wenn er nicht von SkytechHEMS gesteuert wird."
+          "hems_entity_prefix": "SkytechHEMS-Präfix (optional, z. B. \"acspeicher1\") — bindet diesen Speicher direkt an SkytechHEMS an. Leer lassen, wenn er nicht von SkytechHEMS gesteuert wird.",
+          "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Der Speicher antwortet unter dieser Adresse nicht. IP-Adresse und Port prüfen."
+      "cannot_connect": "Der Speicher antwortet unter dieser Adresse nicht. IP-Adresse und Port prüfen.",
+      "invalid_update_interval": "Abfrageintervall muss zwischen 1 und 60 Sekunden liegen."
     },
     "abort": {
       "already_configured": "Dieser Speicher ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Abfrageintervall ändern",
+        "description": "Wie oft dieser Speicher abgefragt wird. Änderung wirkt sofort, ohne HA-Neustart.",
+        "data": {
+          "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)"
+        }
+      }
+    },
+    "error": {
+      "invalid_update_interval": "Abfrageintervall muss zwischen 1 und 60 Sekunden liegen."
     }
   },
   "entity": {

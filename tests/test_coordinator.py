@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -12,10 +12,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.battery_bridge.adapters.base import StorageAdapterError
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
-from custom_components.battery_bridge.const import (
-    DEFAULT_UPDATE_INTERVAL,
-    FAILED_UPDATE_INTERVAL,
-)
+from custom_components.battery_bridge.const import FAILED_UPDATE_INTERVAL
 from custom_components.battery_bridge.models import StorageState
 from tests.conftest import entity_ids_by_key, make_marstek_entry
 
@@ -104,9 +101,11 @@ async def test_poll_fehler_setzt_sensoren_auf_unavailable(
 async def test_poll_intervall_wird_bei_fehler_gestreckt_und_bei_erfolg_zurueckgesetzt(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ein Gerät, das gerade nicht antwortet, wird nicht weiter im 5-s-Takt beschickt — sein
-    Netzwerkchip ist nachweislich empfindlich. Antwortet es wieder, gilt sofort der normale Takt.
+    """Ein Gerät, das gerade nicht antwortet, wird nicht weiter im konfigurierten Takt beschickt
+    — sein Netzwerkchip ist nachweislich empfindlich. Antwortet es wieder, gilt sofort wieder der
+    für dieses Gerät konfigurierte Takt (`entry.options`, D-014), nicht ein globaler Fixwert.
     """
+    configured_interval = timedelta(seconds=12)
     state = StorageState(
         soc_percent=10,
         charge_power_w=0,
@@ -119,11 +118,11 @@ async def test_poll_intervall_wird_bei_fehler_gestreckt_und_bei_erfolg_zurueckge
     monkeypatch.setattr(MarstekUdpAdapter, "read", read_mock)
     monkeypatch.setattr(MarstekUdpAdapter, "close", AsyncMock(return_value=None))
 
-    entry = make_marstek_entry()
+    entry = make_marstek_entry(update_interval_seconds=12)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.runtime_data.update_interval == DEFAULT_UPDATE_INTERVAL
+    assert entry.runtime_data.update_interval == configured_interval
 
     read_mock.side_effect = StorageAdapterError("Timeout")
     await entry.runtime_data.async_refresh()
@@ -133,5 +132,5 @@ async def test_poll_intervall_wird_bei_fehler_gestreckt_und_bei_erfolg_zurueckge
     read_mock.side_effect = None
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
-    assert entry.runtime_data.update_interval == DEFAULT_UPDATE_INTERVAL
+    assert entry.runtime_data.update_interval == configured_interval
 

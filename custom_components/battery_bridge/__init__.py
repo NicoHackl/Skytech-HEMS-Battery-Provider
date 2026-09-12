@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 
@@ -11,6 +13,8 @@ from .const import (
     CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL_SECONDS,
     MANUFACTURER_MARSTEK,
     PROTOCOL_MARSTEK_UDP,
 )
@@ -23,7 +27,12 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER, Platform.SWITCH]
 async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> bool:
     """Einen Speicher-Entry einrichten: Adapter bauen, Coordinator starten, Platforms laden."""
     adapter = _build_adapter(entry)
-    coordinator = BatteryBridgeCoordinator(hass, entry, adapter)
+    update_interval_seconds = entry.options.get(
+        CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_SECONDS
+    )
+    coordinator = BatteryBridgeCoordinator(
+        hass, entry, adapter, update_interval=timedelta(seconds=update_interval_seconds)
+    )
     await coordinator.async_config_entry_first_refresh()
 
     hems_entity_prefix = entry.data.get(CONF_HEMS_ENTITY_PREFIX)
@@ -32,8 +41,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry
         await coordinator.hems_bridge.async_setup()
 
     entry.runtime_data = coordinator
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> None:
+    """Options-Flow-Änderung (z. B. neues Abfrageintervall) wirkt sofort per Reload."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> bool:

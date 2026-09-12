@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
@@ -11,7 +12,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .adapters.base import StorageAdapter, StorageAdapterError
-from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN, FAILED_UPDATE_INTERVAL
+from .const import DOMAIN, FAILED_UPDATE_INTERVAL
 from .models import StorageState
 
 if TYPE_CHECKING:
@@ -34,15 +35,20 @@ class BatteryBridgeCoordinator(DataUpdateCoordinator[StorageState]):
         hass: HomeAssistant,
         entry: BatteryBridgeConfigEntry,
         adapter: StorageAdapter,
+        update_interval: timedelta,
     ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             config_entry=entry,
             name=f"{DOMAIN} ({entry.title})",
-            update_interval=DEFAULT_UPDATE_INTERVAL,
+            update_interval=update_interval,
         )
         self.adapter = adapter
+        # Normaltakt aus der ConfigEntry (CONF_UPDATE_INTERVAL, D-014) — merken, damit
+        # _async_update_data nach einer Fehlstrecke (FAILED_UPDATE_INTERVAL) wieder auf den
+        # konfigurierten Wert zurückfindet statt auf einen globalen Fixwert.
+        self._normal_update_interval = update_interval
         # Nur gesetzt, wenn der Entry ein HEMS-Präfix konfiguriert hat — siehe __init__.py und
         # hems_bridge.py (D-009). Ohne HEMS-Anbindung bleibt dieses Feld `None`.
         self.hems_bridge: HemsBridge | None = None
@@ -67,5 +73,5 @@ class BatteryBridgeCoordinator(DataUpdateCoordinator[StorageState]):
             # `update_interval` bei jeder Neuplanung frisch, ein Zuweisen genügt.
             self.update_interval = FAILED_UPDATE_INTERVAL
             raise UpdateFailed(str(exc)) from exc
-        self.update_interval = DEFAULT_UPDATE_INTERVAL
+        self.update_interval = self._normal_update_interval
         return state
