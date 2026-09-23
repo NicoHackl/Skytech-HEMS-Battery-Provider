@@ -20,8 +20,8 @@ ein `device_info` (Hersteller, Modell, `unique_id` des Entry).
 | `sensor.<prefix>_hems_soll_entladeleistung` | sensor | W | lesen | umgesetzt (D-010), nur mit HEMS-Präfix |
 | `switch.<prefix>_hems_steuerung_aktiv` | switch | – | schreiben | umgesetzt (D-011), nur mit HEMS-Präfix |
 
-`number.*` liest sich nicht vom Gerät zurück (die Marstek Local API bietet dafür keinen
-Read-Pfad) — die Entity zeigt den zuletzt erfolgreich gesendeten Wert (`assumed_state`), nicht
+`number.*` liest sich nicht vom Gerät zurück (weder die Marstek Local API noch E3DC-RSCP bieten
+dafür einen Read-Pfad) — die Entity zeigt den zuletzt erfolgreich gesendeten Wert (`assumed_state`), nicht
 zwingend den tatsächlichen Gerätezustand.
 
 `None`/`available=False` im zugrundeliegenden `StorageState` löst `unavailable` aus — Details:
@@ -67,6 +67,9 @@ dieses Protocol, nie Herstellerdetails:
 
 ```python
 class StorageAdapter(Protocol):
+    keepalive_interval: timedelta   # HEMS-Keep-Alive-Takt (Marstek 60 s, E3DC 5 s, D-015)
+    max_power_w: int                # Obergrenze der number.*_soll_*-Entities
+
     async def connect(self) -> None: ...
     async def read(self) -> StorageState: ...
     async def write_charge_power(self, watts: float) -> None: ...
@@ -77,6 +80,9 @@ class StorageAdapter(Protocol):
 `write_charge_power`/`write_discharge_power` melden Fehler über eine Exception, nie über einen
 stillen Fehlschlag. `MarstekUdpAdapter` setzt beide über `ES.SetMode` im Passive-Mode um — siehe
 [bekannte-luecken.md](bekannte-luecken.md) für Quellenlage und den noch offenen Hardware-Test.
+`E3dcRscpAdapter` sendet RSCP `EMS_REQ_SET_POWER`: Laden > 0 → Betriebsart 4 (Netzladen),
+Entladen > 0 → Betriebsart 2 (Entladen), 0 W → Betriebsart 1 (Leerlauf) — D-015. Abgelehnte
+Zugangsdaten meldet er als `StorageAdapterAuthError` (Unterklasse von `StorageAdapterError`).
 
 ## Fremde Schnittstellen
 
@@ -88,8 +94,11 @@ Von diesem Projekt **genutzte** externe Endpunkte:
 | Marstek Local API | `Bat.GetStatus` | Detaillierterer Batteriestatus (Temperatur, Kapazität) — von dieser Integration bisher nicht genutzt | nicht genutzt |
 | Marstek Local API | `ES.SetMode` (Passive-Mode) | Lade-/Entladeleistung schreiben, `power` + `cd_time`-Watchdog | umgesetzt, unverifiziert an Hardware (M2) |
 | Marstek Local API | `Marstek.GetDevice` | Geräte-Discovery per UDP-Broadcast | nicht umgesetzt, siehe [roadmap.md](roadmap.md) |
+| E3DC RSCP, TCP Ziel-IP:5033 (konfigurierbar), über `pye3dc` | `E3DC.poll()` (`EMS_REQ_BAT_SOC`, `EMS_REQ_POWER_BAT` u. a.) | SoC + Batterieleistung lesen (positiv = laden) | umgesetzt (D-015) |
+| E3DC RSCP | `EMS_REQ_SET_POWER` (`EMS_REQ_SET_POWER_MODE`, `EMS_REQ_SET_POWER_VALUE`) | Lade-/Entladeleistung schreiben, hält rund 10 s | umgesetzt, an Hardware zu bestätigen (D-015) |
 
-Timeout+Retry bei jedem Aufruf: 3× à 1 s, danach `StorageAdapterError` → `UpdateFailed` →
+Timeout+Retry bei jedem Marstek-Aufruf: 3× à 1 s (E3DC: pye3dc-eigene 3 Wiederholungen, 5 s
+Socket-Timeout), danach `StorageAdapterError` → `UpdateFailed` →
 Entities `unavailable`, kein Crash (siehe [architektur.md](architektur.md)).
 
 Feldbedeutungen nicht hier duplizieren, sondern nach [datenmodell.md](datenmodell.md) verlinken.

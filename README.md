@@ -1,6 +1,6 @@
 # Skytech HEMS Battery Provider
 
-Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marstek zuerst) einheitlich als normalisierte HA-Entitäten bereitstellt: Ist-SoC und Ist-Lade-/Entladeleistung lesen, Soll-Lade-/Entladeleistung schreiben. Brücke zwischen Herstelleranbindung und generischen Verbrauchern wie SkytechHEMS.
+Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (aktuell Marstek und E3DC) einheitlich als normalisierte HA-Entitäten bereitstellt: Ist-SoC und Ist-Lade-/Entladeleistung lesen, Soll-Lade-/Entladeleistung schreiben. Brücke zwischen Herstelleranbindung und generischen Verbrauchern wie SkytechHEMS.
 
 ## Schnellstart
 
@@ -14,7 +14,7 @@ ruff check .
 
 Installation über HACS (custom repository) oder manuell nach `custom_components/battery_bridge`
 kopieren, Home Assistant neu starten. Danach in **Einstellungen → Geräte & Dienste → Integration
-hinzufügen** nach „Skytech HEMS Battery Provider" suchen, Hersteller wählen (aktuell Marstek), Verbindungsdaten
+hinzufügen** nach „Skytech HEMS Battery Provider" suchen, Hersteller wählen (aktuell Marstek oder E3DC), Verbindungsdaten
 eingeben. Pro physischem Speicher wird der Vorgang einmal wiederholt. Die entstehenden Entities
 (SoC, Ist-/Soll-Lade-/Entladeleistung — Details: [docs/api-referenz.md](docs/api-referenz.md))
 lassen sich wie jede andere HA-Entity in Dashboards, Automationen oder als Quelle für

@@ -18,10 +18,25 @@
           "hems_entity_prefix": "SkytechHEMS-Präfix (optional, z. B. \"acspeicher1\") — bindet diesen Speicher direkt an SkytechHEMS an. Leer lassen, wenn er nicht von SkytechHEMS gesteuert wird.",
           "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)"
         }
+      },
+      "e3dc_rscp": {
+        "title": "E3DC — Verbindung",
+        "description": "Zugangsdaten des Hauskraftwerks im lokalen Netzwerk. Der RSCP-Schlüssel ist der, der am Hauskraftwerk selbst hinterlegt ist.",
+        "data": {
+          "display_name": "Anzeigename (optional)",
+          "host": "IP-Adresse",
+          "port": "Port",
+          "username": "E3DC-Benutzername (Portal-Konto)",
+          "password": "E3DC-Passwort",
+          "rscp_key": "RSCP-Schlüssel",
+          "hems_entity_prefix": "SkytechHEMS-Präfix (optional, z. B. \"acspeicher1\") — bindet diesen Speicher direkt an SkytechHEMS an. Leer lassen, wenn er nicht von SkytechHEMS gesteuert wird.",
+          "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)"
+        }
       }
     },
     "error": {
       "cannot_connect": "Der Speicher antwortet unter dieser Adresse nicht. IP-Adresse und Port prüfen.",
+      "invalid_auth": "Das Hauskraftwerk lehnt die Anmeldung ab. Benutzername, Passwort und RSCP-Schlüssel prüfen.",
       "invalid_update_interval": "Abfrageintervall muss zwischen 1 und 60 Sekunden liegen."
     },
     "abort": {

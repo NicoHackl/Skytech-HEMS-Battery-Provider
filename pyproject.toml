@@ -4,9 +4,10 @@ version = "0.1.0"
 description = "Home-Assistant-Integration für herstellerübergreifende Batteriespeicher-Entities"
 readme = "README.md"
 requires-python = ">=3.13"
-# Laufzeit-Abhängigkeiten der Integration selbst: keine über die Python-Standardbibliothek
-# hinaus (reines asyncio/UDP/JSON) — siehe manifest.json "requirements".
-dependencies = []
+# Laufzeit-Abhängigkeiten der Integration selbst — müssen mit manifest.json "requirements"
+# übereinstimmen. Marstek kommt mit der Standardbibliothek aus (asyncio/UDP/JSON), E3DC braucht
+# pye3dc für RSCP (D-015).
+dependencies = ["pye3dc==0.10.0"]
 
 [dependency-groups]
 # custom_components/battery_bridge/__init__.py importiert Home Assistant auf Modulebene

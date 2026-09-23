@@ -4,18 +4,22 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from homeassistant.const import CONF_HOST, CONF_PORT, Platform
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
 
 from .adapters.base import StorageAdapter
+from .adapters.e3dc_rscp import E3dcRscpAdapter
 from .adapters.marstek_udp import MarstekUdpAdapter
 from .const import (
     CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
+    CONF_RSCP_KEY,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL_SECONDS,
+    MANUFACTURER_E3DC,
     MANUFACTURER_MARSTEK,
+    PROTOCOL_E3DC_RSCP,
     PROTOCOL_MARSTEK_UDP,
 )
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
@@ -73,4 +77,12 @@ def _build_adapter(entry: BatteryBridgeConfigEntry) -> StorageAdapter:
     protocol = entry.data[CONF_PROTOCOL]
     if manufacturer == MANUFACTURER_MARSTEK and protocol == PROTOCOL_MARSTEK_UDP:
         return MarstekUdpAdapter(entry.data[CONF_HOST], entry.data[CONF_PORT])
+    if manufacturer == MANUFACTURER_E3DC and protocol == PROTOCOL_E3DC_RSCP:
+        return E3dcRscpAdapter(
+            entry.data[CONF_HOST],
+            entry.data[CONF_PORT],
+            entry.data[CONF_USERNAME],
+            entry.data[CONF_PASSWORD],
+            entry.data[CONF_RSCP_KEY],
+        )
     raise ValueError(f"Unbekannter Hersteller/Protokoll: {manufacturer}/{protocol}")

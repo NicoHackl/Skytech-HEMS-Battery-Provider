@@ -77,6 +77,12 @@ Protocol-Queue des Adapters legt — deterministisch, ohne Port-Bindung, ohne Ra
 Coordinator- und Config-Flow-Tests wird stattdessen `MarstekUdpAdapter.connect()`/`read()` selbst
 per `unittest.mock.AsyncMock` gepatcht, das Protokoll spielt dort keine Rolle mehr.
 
+E3DC (`tests/adapters/test_e3dc_rscp.py`): pye3dc arbeitet mit eigenen Sockets, deshalb wird die
+Klasse `E3DC` im Adaptermodul durch ein Fake-Objekt ersetzt, das gesendete Requests aufzeichnet
+und feste `poll()`-Werte liefert. Pflicht: Betriebsart-Abbildung (Laden → 4, Entladen → 2,
+0 W → 1), Vorzeichen der Batterieleistung, Fehlerübersetzung (inkl. abgelehnter Zugangsdaten) und
+der 5-s-Keep-Alive der HEMS-Anbindung (`tests/test_hems_bridge.py`).
+
 Die Antwort-Payloads in den Fixtures stammen aus der bestätigten Marstek-Protokoll-Doku (siehe
 [bekannte-luecken.md](bekannte-luecken.md)), nicht frei erfunden — nur die Vorzeichenkonvention
 von `bat_power` ist dort als unverifiziert markiert und in beide Richtungen getestet.

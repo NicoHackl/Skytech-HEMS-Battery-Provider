@@ -1,8 +1,8 @@
 """number.py — Soll-Ladeleistung, Soll-Entladeleistung je Speicher-Instanz (Schreibzugriff, M2).
 
-Die Marstek Local API erlaubt kein Zurücklesen des aktuellen Passive-Mode-Sollwerts — die
-Entity zeigt deshalb den zuletzt erfolgreich gesendeten Wert, nicht zwingend den tatsächlichen
-Gerätezustand (`_attr_assumed_state`). Quellenlage und offene Punkte zum Schreibpfad:
+Weder die Marstek Local API noch E3DC-RSCP erlauben ein Zurücklesen des aktuell gesetzten
+Sollwerts — die Entity zeigt deshalb den zuletzt erfolgreich gesendeten Wert, nicht zwingend den
+tatsächlichen Gerätezustand (`_attr_assumed_state`). Quellenlage und offene Punkte zum Schreibpfad:
 docs/bekannte-luecken.md.
 """
 
@@ -31,13 +31,6 @@ from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# Obergrenze aus der Community-Dokumentation der Marstek Local API (Passive-Mode-Range laut
-# jaapp/ha-marstek-local-api: -10000..10000 W gesamt) — keine geräte-spezifisch geprüfte
-# Grenze. Die tatsächlich sinnvolle Grenze je Speicher ist Sache der HEMS-Konfiguration
-# (available_charge_power_w/available_discharge_power_w), nicht dieser Integration
-# (Nicht-Ziel: keine Regel-/Verteilungslogik, siehe docs/architektur.md).
-_MAX_POWER_W = 10000
-
 
 @dataclass(frozen=True, kw_only=True)
 class BatteryBridgeNumberDescription(NumberEntityDescription):
@@ -54,7 +47,6 @@ NUMBER_DESCRIPTIONS: tuple[BatteryBridgeNumberDescription, ...] = (
         device_class=NumberDeviceClass.POWER,
         mode=NumberMode.BOX,
         native_min_value=0,
-        native_max_value=_MAX_POWER_W,
         native_step=10,
         write_fn=lambda adapter, value: adapter.write_charge_power(value),
     ),
@@ -65,7 +57,6 @@ NUMBER_DESCRIPTIONS: tuple[BatteryBridgeNumberDescription, ...] = (
         device_class=NumberDeviceClass.POWER,
         mode=NumberMode.BOX,
         native_min_value=0,
-        native_max_value=_MAX_POWER_W,
         native_step=10,
         write_fn=lambda adapter, value: adapter.write_discharge_power(value),
     ),
@@ -100,6 +91,9 @@ class BatteryBridgeNumber(CoordinatorEntity[BatteryBridgeCoordinator], NumberEnt
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        # Obergrenze kommt vom Adapter, nicht aus der Beschreibung — sie ist geräteabhängig
+        # (Marstek 10 kW laut Community-Doku, E3DC aus der Anlagenkennung, D-015).
+        self._attr_native_max_value = coordinator.adapter.max_power_w
         device_id = entry.unique_id or entry.entry_id
         self._attr_unique_id = f"{device_id}_{description.key}"
         self._attr_device_info = DeviceInfo(

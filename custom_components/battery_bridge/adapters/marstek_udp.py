@@ -39,6 +39,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from ..const import HEMS_KEEPALIVE_INTERVAL
 from ..models import StorageState
 from .base import StorageAdapterError
 
@@ -57,6 +58,12 @@ _RECONNECT_AFTER_FAILED_CALLS = 2
 # Sicherheits-Watchdog für den Passive-Mode-Sollwert (siehe Moduldoc) — Default von
 # leonscheltema/ha-marstek übernommen, dort ebenfalls der Standardwert der Entity.
 _PASSIVE_MODE_DURATION_S = 300
+# Obergrenze aus der Community-Dokumentation der Marstek Local API (Passive-Mode-Range laut
+# jaapp/ha-marstek-local-api: -10000..10000 W gesamt) — keine geräte-spezifisch geprüfte
+# Grenze. Die tatsächlich sinnvolle Grenze je Speicher ist Sache der HEMS-Konfiguration
+# (available_charge_power_w/available_discharge_power_w), nicht dieser Integration
+# (Nicht-Ziel: keine Regel-/Verteilungslogik, siehe docs/architektur.md).
+_MAX_POWER_W = 10000
 
 
 class _MarstekUdpProtocol(asyncio.DatagramProtocol):
@@ -88,6 +95,9 @@ class _MarstekUdpProtocol(asyncio.DatagramProtocol):
 
 class MarstekUdpAdapter:
     """`StorageAdapter`-Implementierung für die Marstek Local API (UDP JSON-RPC)."""
+
+    keepalive_interval = HEMS_KEEPALIVE_INTERVAL
+    max_power_w = _MAX_POWER_W
 
     def __init__(self, host: str, port: int) -> None:
         self._host = host

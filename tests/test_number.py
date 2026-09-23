@@ -113,3 +113,14 @@ async def test_soll_leistung_fehler_verbirgt_technische_details(
     assert "30000" not in user_message
     assert "ES.SetMode" not in user_message
     assert technical_detail in caplog.text
+
+
+async def test_obergrenze_der_soll_leistung_kommt_vom_adapter(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Obergrenze ist geräteabhängig (D-015) — Marstek meldet 10 kW."""
+    _entry, entity_ids = await _setup_loaded_entry(hass, monkeypatch)
+
+    state = hass.states.get(entity_ids["soll_ladeleistung"])
+
+    assert state.attributes["max"] == MarstekUdpAdapter.max_power_w

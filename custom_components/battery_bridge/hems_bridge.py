@@ -37,18 +37,20 @@ sich die Betriebsart seit der Pause nicht geändert hat (während der Pause kön
 Richtung manuell verändert worden sein, das darf beim Fortsetzen nicht unbemerkt stehen bleiben).
 
 Keep-Alive (D-012): Neben dem ereignisgetriebenen Sync auf Änderungen der beiden HEMS-Helfer läuft
-zusätzlich ein fester `HEMS_KEEPALIVE_INTERVAL`-Takt (`const.py`), der denselben `_async_sync()`
-erneut anstößt — unabhängig davon, ob sich die HEMS-Anforderung seitdem geändert hat. Grund: der
-Marstek-Passive-Mode-Sollwert trägt einen eigenen Sicherheits-Watchdog (`cd_time`, siehe
-`adapters/marstek_udp.py`), der nach 300 s ohne neuen Schreibvorgang das Gerät aus dem Passive-Mode
-zurückfallen lässt — unabhängig davon, ob der zuletzt gesendete Sollwert weiterhin gilt. Bleibt die
-HEMS-Anforderung mehrere Minuten exakt unverändert, gäbe es ohne Keep-Alive kein auslösendes
-Ereignis mehr, und der Speicher würde trotz unverändert aktiver Anforderung leise aus dem
-Passive-Mode fallen. Per HA-Verlauf am 04.09.2026 genau in diesem Muster beobachtet und bestätigt
-(zwei Ladeabbrüche, je ~300 s nach dem letzten tatsächlich gesendeten Sollwert) — Details:
+zusätzlich ein fester Takt (`keepalive_interval` des Adapters — Marstek 60 s, E3DC 5 s, D-015), der
+denselben `_async_sync()` erneut anstößt — unabhängig davon, ob sich die HEMS-Anforderung seitdem
+geändert hat. Grund: der Marstek-Passive-Mode-Sollwert trägt einen eigenen Sicherheits-Watchdog
+(`cd_time`, siehe `adapters/marstek_udp.py`), der nach 300 s ohne neuen Schreibvorgang das Gerät aus
+dem Passive-Mode zurückfallen lässt — unabhängig davon, ob der zuletzt gesendete Sollwert weiterhin
+gilt. Bleibt die HEMS-Anforderung mehrere Minuten exakt unverändert, gäbe es ohne Keep-Alive kein
+auslösendes Ereignis mehr, und der Speicher würde trotz unverändert aktiver Anforderung leise aus
+dem Passive-Mode fallen. Per HA-Verlauf am 04.09.2026 genau in diesem Muster beobachtet und
+bestätigt (zwei Ladeabbrüche, je ~300 s nach dem letzten tatsächlich gesendeten Sollwert) — Details:
 `docs/bekannte-luecken.md`, Abschnitt „HEMS-Anforderung ‚hängt' nach 5 Minuten". Ersetzt die
 gegenteilige Annahme aus D-008 (dort noch: kein automatischer Refresh-Loop nötig, HEMS/Automationen
-senden bei Bedarf selbst erneut) — traf so nicht zu, siehe ADR D-012.
+senden bei Bedarf selbst erneut) — traf so nicht zu, siehe ADR D-012. Bei E3DC ist der Takt zwingend
+kurz: das Gerät übernimmt nach rund 10 s ohne neuen Sollwert selbst wieder (D-015) — deshalb wird
+dort auch ein Sollwert von 0 W (Betriebsart „standby") laufend erneut gesendet.
 """
 
 from __future__ import annotations
@@ -63,7 +65,6 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 
 from .adapters.base import StorageAdapterError
-from .const import HEMS_KEEPALIVE_INTERVAL
 
 if TYPE_CHECKING:
     from .coordinator import BatteryBridgeCoordinator
@@ -153,7 +154,9 @@ class HemsBridge:
             self._async_handle_event,
         )
         self._unsub_keepalive = async_track_time_interval(
-            self._hass, self._async_handle_keepalive, HEMS_KEEPALIVE_INTERVAL
+            self._hass,
+            self._async_handle_keepalive,
+            self._coordinator.adapter.keepalive_interval,
         )
         await self._async_sync()
 

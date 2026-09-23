@@ -79,11 +79,19 @@ Hardware-Verifikation macht der User selbst an der echten Anlage.
 | 7 | Bewährungsphase im Normalbetrieb (Dauer: User legt fest); `script.venus_e_1_steuerung` dabei nur aus dem `parallel`-Block von `script.hems_postskript` entfernen, nicht löschen (schneller Rollback bleibt möglich) | offen | |
 | 8 | Nach ausdrücklicher Freigabe: alte Modbus-Automation/-Integration entfernen | offen | |
 
+### E3DC-Adapter (D-015)
+
+| Schritt | Stand |
+|---|---|
+| Adapter `adapters/e3dc_rscp.py` (RSCP über pye3dc), Config-Flow-Schritt, Keep-Alive 5 s | fertig (23.09.2026) |
+| An echter Anlage: Istwerte gegen bisherige Modbus-Sensoren abgleichen, HEMS laden/entladen/standby jeweils > 10 s stabil, Schalter aus → E3DC regelt selbst | offen |
+| Nach Bestätigung: pyscript-Automation „E3DC Manuelle Leistung" für HEMS nicht mehr nötig | offen |
+
 ## Zurückgestellt
 
 | Thema | Warum zurückgestellt | Bedingung für Wiederaufnahme |
 |---|---|---|
-| Weitere Hersteller/Protokolle (Modbus TCP, HTTP/REST, MQTT) | Marstek UDP ist der einzige aktuell benötigte Adapter | Marstek-Adapter stabil in Betrieb **und** konkreter Bedarf für einen zweiten Hersteller/Speicher |
+| Weitere Hersteller/Protokolle (Modbus TCP, HTTP/REST, MQTT) | Marstek UDP und E3DC RSCP (D-015, 23.09.2026) decken den aktuellen Bedarf | Konkreter Bedarf für einen weiteren Hersteller/Speicher |
 | Geräte-Discovery per UDP-Broadcast (`Marstek.GetDevice`) im Config-Flow | Komfortfeature (plan.md Abschnitt 5) — manuelle IP-Eingabe im Config-Flow funktioniert bereits | Konkretes Nutzerfeedback, dass manuelle IP-Eingabe stört |
 
 ---

@@ -8,7 +8,7 @@
 
 | Bezeichner | Bedeutung | Vergeben von | Unveränderlich |
 |---|---|---|---|
-| `ConfigEntry.unique_id` | Identifiziert einen physischen Speicher, aus Host+Port (oder Geräte-/MAC-ID, falls die Herstellerantwort eine liefert) | `config_flow.py` beim Anlegen | ja |
+| `ConfigEntry.unique_id` | Identifiziert einen physischen Speicher — Marstek: `<Host>:<Port>`; E3DC: `e3dc_<Seriennummer>`, ersatzweise `e3dc_<Host>:<Port>` (D-015) | `config_flow.py` beim Anlegen | ja |
 | `<prefix>` | Entity-Präfix eines Speichers (z. B. `marstek_venus1`) | User im Config-Flow, aus Anzeigename abgeleitet | nein — Anzeigename kann geändert werden, `unique_id` bleibt gleich |
 
 Grundsatz: `<prefix>` bzw. Entity-IDs sind **nie** der Primärschlüssel, mit dem ein Speicher

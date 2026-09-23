@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -11,10 +11,14 @@ from custom_components.battery_bridge.const import (
     CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
+    CONF_RSCP_KEY,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL_SECONDS,
     DOMAIN,
+    E3DC_RSCP_DEFAULT_PORT,
+    MANUFACTURER_E3DC,
     MANUFACTURER_MARSTEK,
+    PROTOCOL_E3DC_RSCP,
     PROTOCOL_MARSTEK_UDP,
 )
 
@@ -43,6 +47,32 @@ def make_marstek_entry(
             CONF_PROTOCOL: PROTOCOL_MARSTEK_UDP,
             CONF_HOST: host,
             CONF_PORT: port,
+            CONF_HEMS_ENTITY_PREFIX: hems_entity_prefix,
+        },
+        options={CONF_UPDATE_INTERVAL: update_interval_seconds},
+    )
+
+
+def make_e3dc_entry(
+    *,
+    host: str = "127.0.0.2",
+    title: str = "E3DC 127.0.0.2",
+    hems_entity_prefix: str | None = None,
+    update_interval_seconds: int = DEFAULT_UPDATE_INTERVAL_SECONDS,
+) -> MockConfigEntry:
+    """Ein `MockConfigEntry`, wie ihn der echte Config-Flow für E3DC/RSCP anlegen würde (D-015)."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="e3dc_S10-123456",
+        title=title,
+        data={
+            CONF_MANUFACTURER: MANUFACTURER_E3DC,
+            CONF_PROTOCOL: PROTOCOL_E3DC_RSCP,
+            CONF_HOST: host,
+            CONF_PORT: E3DC_RSCP_DEFAULT_PORT,
+            CONF_USERNAME: "benutzer@example.com",
+            CONF_PASSWORD: "geheim",
+            CONF_RSCP_KEY: "schluessel",
             CONF_HEMS_ENTITY_PREFIX: hems_entity_prefix,
         },
         options={CONF_UPDATE_INTERVAL: update_interval_seconds},
