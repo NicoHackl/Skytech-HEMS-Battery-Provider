@@ -13,11 +13,12 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.battery_bridge.adapters.base import StorageAdapterError
+from custom_components.battery_bridge.adapters.e3dc_rscp import E3dcRscpAdapter
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
-from custom_components.battery_bridge.const import HEMS_KEEPALIVE_INTERVAL
+from custom_components.battery_bridge.const import E3DC_KEEPALIVE_INTERVAL, HEMS_KEEPALIVE_INTERVAL
 from custom_components.battery_bridge.hems_bridge import HemsCommandState
 from custom_components.battery_bridge.models import StorageState
-from tests.conftest import make_marstek_entry
+from tests.conftest import make_e3dc_entry, make_marstek_entry
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -455,3 +456,77 @@ async def test_erfolgreicher_sync_nach_fehler_meldet_wieder_ok(
     assert entry.runtime_data.hems_bridge.write_ok is True
     assert "setzt den Sollwert wieder" in caplog.text
 
+
+
+async def _setup_e3dc_entry(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[str, float]]:
+    """E3DC-Entry mit HEMS-Präfix einrichten, Schreibaufrufe aufzeichnen (D-015)."""
+    calls: list[tuple[str, float]] = []
+    state = StorageState(
+        soc_percent=50,
+        charge_power_w=0,
+        discharge_power_w=0,
+        available=True,
+        last_update=datetime.now(UTC),
+    )
+    monkeypatch.setattr(E3dcRscpAdapter, "connect", AsyncMock(return_value=None))
+    monkeypatch.setattr(E3dcRscpAdapter, "read", AsyncMock(return_value=state))
+    monkeypatch.setattr(E3dcRscpAdapter, "close", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        E3dcRscpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=lambda watts: calls.append(("charge", watts))),
+    )
+    monkeypatch.setattr(
+        E3dcRscpAdapter,
+        "write_discharge_power",
+        AsyncMock(side_effect=lambda watts: calls.append(("discharge", watts))),
+    )
+    entry = make_e3dc_entry(hems_entity_prefix=_PREFIX)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return calls
+
+
+async def test_e3dc_keepalive_sendet_alle_fuenf_sekunden(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-015: E3DC übernimmt nach ~10 s selbst — der Sollwert kommt alle 5 s erneut."""
+    calls = await _setup_e3dc_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="1500", betriebsart="laden")
+    calls.clear()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + E3DC_KEEPALIVE_INTERVAL)
+    await hass.async_block_till_done()
+
+    assert calls == [("charge", 1500.0)]
+
+
+async def test_e3dc_keepalive_sendet_auch_null_watt(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Auch „standby" (0 W) wird laufend erneuert — sonst regelt E3DC nach ~10 s selbst."""
+    calls = await _setup_e3dc_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="0", betriebsart="standby")
+    calls.clear()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + E3DC_KEEPALIVE_INTERVAL)
+    await hass.async_block_till_done()
+
+    assert calls == [("charge", 0.0), ("discharge", 0.0)]
+
+
+async def test_marstek_keepalive_bleibt_bei_sechzig_sekunden(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Der kurze E3DC-Takt darf Marstek nicht treffen: nach 5 s noch kein erneuter Sollwert."""
+    calls, _entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    async_fire_time_changed(hass, dt_util.utcnow() + E3DC_KEEPALIVE_INTERVAL)
+    await hass.async_block_till_done()
+
+    assert calls == []

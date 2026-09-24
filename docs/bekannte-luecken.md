@@ -282,7 +282,7 @@ Dinge, die schon einmal Zeit gekostet haben:
   enthalten bewusst Host, Port, JSON-RPC-Methodennamen und rohe Antwort-Dicts (siehe
   `adapters/marstek_udp.py`) — wertvoll beim Debuggen, aber ein Verstoß gegen Regel 12, sobald sie
   unverändert in eine `HomeAssistantError` wandern. Genau das ist `number.py` passiert (siehe
-  CHANGELOG.md). Ein künftiger zweiter Adapter (D-006) muss dasselbe Muster einhalten: technisch
+  CHANGELOG.md). Jeder weitere Adapter (D-006) — auch `adapters/e3dc_rscp.py` — muss dasselbe Muster einhalten: technisch
   loggen, dann eine eigene Nutzermeldung bauen — nie `str(exc)` direkt an eine HA-Exception geben.
 - **`number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung` zeigen nicht, was die
   HEMS-Anbindung gerade wirklich sendet.** `hems_bridge.py` schreibt direkt auf den Adapter
@@ -318,11 +318,20 @@ Schreibaufrufe, die sie auslöst, laufen über denselben unverifizierten Marstek
 | Löst ein Wechsel von `laden`/`entladen`/`standby` am Gerät tatsächlich die erwartete Richtung aus, in der von `hems_bridge.py` gewählten Reihenfolge (inaktiv zuerst auf 0)? | `hems_bridge.py: _async_sync()` | Aktivierung der HEMS-Anbindung an echter Hardware |
 | Solange die HEMS-Anbindung für einen Entry aktiv ist, überschreibt sie laufend die eigenen `number.*_soll_*`-Entities — manuelles Bedienen dieser Entities in diesem Zustand wird vom nächsten HEMS-Zyklus (Sekundentakt) sofort wieder verworfen. **Seit 0.4.0 gezielt vermeidbar:** `switch.<prefix>_hems_steuerung_aktiv` (D-011) ausschalten, bevor `number.*_soll_*` manuell bedient wird — steht nach dem nächsten Neustart wieder auf EIN. | `number.py` vs. `hems_bridge.py` | Kein Bug, aber überraschend, wenn nicht dokumentiert |
 
+## E3DC — vor dem produktiven Einsatz zu bestätigen (D-015)
+
+| Frage | Betrifft | Blockiert |
+|---|---|---|
+| Vorzeichen von `consumption.battery` aus `E3DC.poll()` (laut pye3dc-Doku positiv = laden) — gegen `sensor.e3dc_leistung_batterie_modbus` abgleichen | `adapters/e3dc_rscp.py: read()` | Verlässliche Ist-Lade-/Entladeleistung |
+| Hält E3DC den Sollwert bei 5-s-Takt dauerhaft, ohne zwischendurch selbst zu regeln? Die Rückfallzeit (~10 s) stammt aus Beobachtung, nicht aus Herstellerdoku; die pyscript-Beschreibung nannte 30 s | `const.py: E3DC_KEEPALIVE_INTERVAL` | Aktivierung der HEMS-Anbindung für E3DC |
+| **Manuelle Sollwerte halten nur ~10 s.** `number.<prefix>_soll_*` schreibt einmalig, ohne Keep-Alive — bei E3DC übernimmt das Gerät danach selbst. Für Dauerbetrieb HEMS-Anbindung nutzen | `number.py` | Kein Bug, aber überraschend |
+| **Parallelbetrieb mit dem pyscript.** Laufen die pyscript-Automationen „E3DC Manuelle Leistung" oder „pyE3DC Max Ladeleistung Speicher setzen" weiter, schreiben zwei Stellen auf dasselbe Gerät; SmartPower-Limits (`set_power_limits`) können den Sollwert zusätzlich begrenzen | Home-Assistant-Konfiguration des Users | Eindeutige Steuerung |
+
 ## Bewusst nicht umgesetzt
 
 | Thema | Warum nicht | Verweis |
 |---|---|---|
-| Weitere Hersteller/Protokolle (Modbus TCP, HTTP/REST, MQTT) | Kein aktueller Bedarf, Marstek UDP deckt den Start | D-006, [roadmap.md](roadmap.md) |
+| Weitere Hersteller/Protokolle (Modbus TCP, HTTP/REST, MQTT) | Kein aktueller Bedarf, Marstek UDP und E3DC RSCP decken ihn | D-006, D-015, [roadmap.md](roadmap.md) |
 
 ---
 

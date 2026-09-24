@@ -5,7 +5,7 @@
 
 ## Zweck und Abgrenzung
 
-Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marstek zuerst) einheitlich als normalisierte HA-Entitäten bereitstellt: Ist-SoC und Ist-Lade-/Entladeleistung lesen, Soll-Lade-/Entladeleistung schreiben. Brücke zwischen Herstelleranbindung und generischen Verbrauchern wie SkytechHEMS.
+Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (aktuell Marstek und E3DC) einheitlich als normalisierte HA-Entitäten bereitstellt: Ist-SoC und Ist-Lade-/Entladeleistung lesen, Soll-Lade-/Entladeleistung schreiben. Brücke zwischen Herstelleranbindung und generischen Verbrauchern wie SkytechHEMS.
 
 **Nicht** Aufgabe dieses Projekts:
 
@@ -24,6 +24,7 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (Marst
 |---|---|---|
 | Sprache / Laufzeit | Python 3.13+, Home Assistant Custom Component, `asyncio` | Von aktuellem HA-Core/`pytest-homeassistant-custom-component` vorausgesetzt — Plan nannte 3.11, siehe [bekannte-luecken.md](bekannte-luecken.md) |
 | Transport (Marstek) | UDP JSON-RPC, Port 30000 | Offizielle lokale Open-API, geringerer Overhead als Modbus TCP, kein Firmware-Mindeststand nötig — siehe D-007 |
+| Transport (E3DC) | RSCP (TCP, Port 5033, verschlüsselt) über `pye3dc`, synchron im Executor | Derselbe Weg, über den die Steuerung vorher per pyscript lief; Lesen und Schreiben über eine Sitzung — siehe D-015 |
 | Persistenz | Keine eigene — HA-State/Config-Entries | Nicht-Ziel, siehe oben |
 | Schnittstelle | HA-Entities (`sensor`, `number`) je Speicher-Instanz | Einzige öffentliche Schnittstelle dieses Projekts, siehe [api-referenz.md](api-referenz.md) |
 | Tests | `pytest` + `pytest-homeassistant-custom-component` | Deterministisch, ohne Netzwerkzugriff, gegen den echten HA-Testkern — Details: [test-strategie.md](test-strategie.md) |
@@ -109,11 +110,14 @@ nur geloggt, nie als `HomeAssistantError` geworfen (kein Service-Aufrufer, dem e
 werden könnte) — dafür setzt er `HemsBridge.write_ok` auf `False`, woraufhin die beiden
 HEMS-Soll-Sensoren auf `unavailable` gehen, statt einen unbestätigten Sollwert weiterzuzeigen
 (D-013). Anders als beim manuellen Schreibpfad läuft hier zusätzlich ein
-Keep-Alive-Timer (`HEMS_KEEPALIVE_INTERVAL`, 60 s): SkytechHEMS sendet nachweislich nicht erneut,
+Keep-Alive-Timer im Takt des Adapters (`StorageAdapter.keepalive_interval` — Marstek 60 s, E3DC
+5 s, D-015): SkytechHEMS sendet nachweislich nicht erneut,
 solange sich die Anforderung nicht ändert, der `cd_time`-Watchdog verlangt aber unabhängig davon
 einen neuen Aufruf — ohne den Timer fiele der Speicher nach 300 s aus dem Sollwert, obwohl die
 Anforderung weiterhin gilt (siehe [bekannte-luecken.md](bekannte-luecken.md) und
-[docs/adr/D-012-hems-keepalive.md](adr/D-012-hems-keepalive.md)). Das ist genau die in `plan.md`
+[docs/adr/D-012-hems-keepalive.md](adr/D-012-hems-keepalive.md)). E3DC übernimmt schon nach rund
+10 s ohne neuen Sollwert selbst wieder — dort wird deshalb auch 0 W alle 5 s erneuert
+([docs/adr/D-015-e3dc-rscp-adapter.md](adr/D-015-e3dc-rscp-adapter.md)). Das ist genau die in `plan.md`
 §9 als „später, optionaler Bridge-Baustein" angekündigte Erweiterung, jetzt Teil der Integration
 statt einer externen HA-Automation — siehe [design-entscheidungen.md](design-entscheidungen.md)
 D-009 und
@@ -145,8 +149,9 @@ custom_components/battery_bridge/
 ├── models.py                      # StorageState (Dataclass)
 ├── adapters/
 │   ├── __init__.py
-│   ├── base.py                     # StorageAdapter-Protocol, StorageAdapterError
-│   └── marstek_udp.py               # Marstek Local API, UDP JSON-RPC Port 30000 — Lesen+Schreiben
+│   ├── base.py                     # StorageAdapter-Protocol, StorageAdapterError(+AuthError)
+│   ├── marstek_udp.py               # Marstek Local API, UDP JSON-RPC Port 30000 — Lesen+Schreiben
+│   └── e3dc_rscp.py                 # E3DC-Hauskraftwerk, RSCP über pye3dc — Lesen+Schreiben (D-015)
 ├── sensor.py                        # SoC-%, Ist-Ladeleistung-W, Ist-Entladeleistung-W,
 │                                     #   optional: HEMS-Soll-Lade-/Entladeleistung-W (D-010)
 ├── number.py                         # Soll-Ladeleistung-W, Soll-Entladeleistung-W
@@ -156,8 +161,10 @@ custom_components/battery_bridge/
 
 tests/
 ├── adapters/test_marstek_udp.py   # gegen gemockten Transport, kein echter Socket
+├── adapters/test_e3dc_rscp.py     # gegen ein Fake-pye3dc-Objekt, kein echter Socket
 ├── test_coordinator.py             # gegen den echten HA-Testkern (hass-Fixture)
 ├── test_config_flow.py              # ebenso
+├── test_config_flow_e3dc.py         # ebenso, E3DC-Zweig
 ├── test_number.py                    # ebenso
 ├── test_sensor.py                     # ebenso
 ├── test_hems_bridge.py                # ebenso

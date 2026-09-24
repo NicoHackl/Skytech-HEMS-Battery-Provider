@@ -13,6 +13,14 @@ Datei angefasst wurde.
 
 ### Hinzugefügt
 
+- E3DC-Hauskraftwerke als zweiter Speicher: Beim Einrichten lässt sich jetzt „E3DC" als Hersteller
+  wählen. Nach Eingabe von IP-Adresse, E3DC-Benutzername, Passwort und RSCP-Schlüssel erscheinen
+  dieselben Entities wie beim Marstek-Speicher — Ladezustand, Ist-/Soll-Lade- und
+  Entladeleistung, HEMS-Sollwerte und der Schalter „HEMS-Steuerung". Unter HEMS-Steuerung wird
+  der Sollwert alle 5 Sekunden erneut gesendet, auch bei 0 W, weil E3DC sonst nach rund 10
+  Sekunden selbst wieder regelt. Laden nutzt dabei bei Bedarf auch Netzstrom, 0 W hält den
+  Speicher im Leerlauf. Falsche Zugangsdaten werden beim Einrichten eigens gemeldet.
+
 - Abfrageintervall pro Speicher einstellbar: Beim Einrichten lässt sich jetzt festlegen, wie oft
   ein Speicher abgefragt wird (1–60 Sekunden). Über die Optionen des Geräts (Zahnrad-Symbol) lässt
   sich der Wert später jederzeit ändern, ohne den Speicher neu einzurichten — die Änderung wirkt

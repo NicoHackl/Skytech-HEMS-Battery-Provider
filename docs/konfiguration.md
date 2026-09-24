@@ -26,13 +26,24 @@ mit dem Default (5 s).
 
 ## Secrets
 
-- Es werden aktuell keine Secrets verwaltet: Marstek Local API läuft unauthentifiziert im LAN
-  (kein API-Key, kein Passwort) — siehe [sicherheit-datenschutz.md](sicherheit-datenschutz.md).
-- Bräuchte ein künftiger Adapter (z. B. eine Cloud-Anbindung) doch Zugangsdaten, laufen die über
-  den verschlüsselten Storage von Home Assistant (Config-Entry-Daten), **nie** über Code oder eine
-  eingecheckte Datei. Das ist dann eine Design-Entscheidung → [design-entscheidungen.md](design-entscheidungen.md).
+- Marstek Local API läuft unauthentifiziert im LAN (kein API-Key, kein Passwort) — siehe
+  [sicherheit-datenschutz.md](sicherheit-datenschutz.md).
+- E3DC (RSCP, D-015) braucht Benutzername und Passwort des E3DC-Portalkontos sowie den am
+  Hauskraftwerk hinterlegten RSCP-Schlüssel. Alle drei werden im Config-Flow eingegeben
+  (Passwort und Schlüssel maskiert) und liegen ausschließlich in den Config-Entry-Daten von Home
+  Assistant — **nie** im Code, in einer eingecheckten Datei oder im Log. Fehlermeldungen des
+  Adapters nennen nur Host, Port und Fehlertyp.
 - Ein versehentlich geloggter Wert aus einer Herstellerantwort wird vor dem Log maskiert, falls
-  sich das je ändert — aktuell enthält die Marstek-Antwort keine Zugangsdaten.
+  sich das je ändert — aktuell enthalten weder Marstek- noch E3DC-Antworten Zugangsdaten.
+
+## Config-Flow-Felder je Hersteller
+
+| Hersteller | Felder | Default |
+|---|---|---|
+| Marstek (UDP) | Anzeigename, IP-Adresse, UDP-Port, HEMS-Präfix, Abfrageintervall | Port 30000, 5 s |
+| E3DC (RSCP) | Anzeigename, IP-Adresse, Port, E3DC-Benutzername, E3DC-Passwort, RSCP-Schlüssel, HEMS-Präfix, Abfrageintervall | Port 5033, 5 s |
+
+HEMS-Keep-Alive-Takt (nicht konfigurierbar, geräteabhängig): Marstek 60 s, E3DC 5 s (D-015).
 
 ## Grundsatz
 

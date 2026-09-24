@@ -40,14 +40,16 @@ Formulierung und Format der sichtbaren Texte: [nutzertexte.md](nutzertexte.md).
 | Personenbezogene Daten jeder Art | nein | — | — |
 
 Verarbeitet werden ausschließlich Gerätemesswerte (SoC, Leistung) und Verbindungsdaten
-(Host/IP, Port) eines im eigenen LAN stehenden Speichers. Grundsatz Datenminimierung: Was nicht
+(Host/IP, Port) eines im eigenen LAN stehenden Speichers — bei E3DC zusätzlich die Zugangsdaten
+zum Gerät (Benutzername, Passwort, RSCP-Schlüssel), die nur im Config-Entry liegen und nie geloggt
+werden (siehe [konfiguration.md](konfiguration.md)). Grundsatz Datenminimierung: Was nicht
 erhoben wird, kann nicht verloren gehen.
 
 ## Externe Dienste
 
 | Dienst | Welche Daten gehen dorthin | Warum nötig |
 |---|---|---|
-| Keine — Marstek Local API läuft rein im LAN, kein Cloud-Zugriff auf Herstellerserver (Nicht-Ziel, siehe [architektur.md](architektur.md)) | — | — |
+| Keine — Marstek Local API und E3DC-RSCP laufen rein im LAN, kein Cloud-Zugriff auf Herstellerserver (Nicht-Ziel, siehe [architektur.md](architektur.md)) | — | — |
 
 Ein neuer externer Dienst (z. B. eine künftige Cloud-API als Adapter) ist eine
 Design-Entscheidung → Eintrag in [design-entscheidungen.md](design-entscheidungen.md), inklusive
