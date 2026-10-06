@@ -11,6 +11,12 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Dokumentation — 06.10.2026
+
+- Gemeinsame Contract-Ablage mit einem Ordner je Projektpaar und aktualisierten Verweisen.
+- Aktueller Austausch mit HEMS einschließlich bestehender Kompatibilitäts- und Betriebsgrenzen dokumentiert.
+
+
 ### Hinzugefügt
 
 - E3DC-Hauskraftwerke als zweiter Speicher: Beim Einrichten lässt sich jetzt „E3DC" als Hersteller

@@ -1,5 +1,7 @@
 # Datenmodell
 
+Gemeinsamer Schnittstellenstand: [HEMS-Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md).
+
 > Enthält nur, was **wirklich** persistiert oder zwischen Komponenten ausgetauscht wird.
 > Trifft auf dieses Projekt nichts davon zu: Datei löschen und aus
 > [README.md](README.md) austragen.
@@ -47,9 +49,9 @@ vorhanden, wenn der Entry ein HEMS-Präfix hat.
 - `None` bedeutet „nicht verfügbar" (ungültige/fehlgeschlagene Abfrage), `0` bedeutet eine
   gemessene Nullleistung. Die beiden werden nie vermischt — ein Adapter, der einen Timeout hat,
   liefert `None`, nie `0`.
-- `available=False` löst in HA `unavailable` auf allen Entities des Entry aus — Verbraucher wie
-  SkytechHEMS behandeln das über ihren eigenen Fallback-auf-sicheren-Zustand, diese Integration
-  baut dafür nichts Eigenes.
+- `available=False` macht die Messsensoren nicht verfügbar. Die HEMS-Sollsensoren haben eine
+  eigene Verfügbarkeitsprüfung über `last_command` und `write_ok`; sie spiegeln keinen Poll.
+  SkytechHEMS behandelt ungültige Speicher-Messwerte über seinen sicheren Ausgabezustand.
 - **Erzeuger (Adapter) sind strikt:** nur Werte schreiben, die die Herstellerantwort tatsächlich
   hergibt — kein Interpolieren oder Erraten fehlender Felder.
 - **Verbraucher (Coordinator, Platforms) sind tolerant** gegenüber `None`-Feldern, nie gegenüber

@@ -1,5 +1,7 @@
 # API-Referenz
 
+Gemeinsamer Schnittstellenstand: [HEMS-Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md).
+
 > Dieses Projekt hat keine eigene REST-API. Seine öffentlichen Schnittstellen sind (1) die
 > HA-Entities, die andere Komponenten (allen voran SkytechHEMS) konsumieren, und (2) das
 > `StorageAdapter`-Protocol als Erweiterungspunkt für neue Hersteller/Protokolle.
@@ -38,12 +40,12 @@ verwaltete Entities:
 | `input_number.ems_<hems_entity_prefix>_anforderung_leistung_w` | lesen | Signierter Sollwert: positiv = laden, negativ = entladen |
 | `input_select.ems_<hems_entity_prefix>_anforderung_betriebsart` | lesen | `laden` / `entladen` / `standby` |
 
-und übersetzt jede Änderung in `adapter.write_charge_power()`/`write_discharge_power()` — in
-dieser Reihenfolge zuerst die inaktive Richtung auf `0`, danach die aktive Richtung (Details:
-[architektur.md](architektur.md), [design-entscheidungen.md](design-entscheidungen.md) D-009).
-Fehlen die beiden Entities (falscher Präfix, HEMS-Gerät noch nicht angelegt) oder ist die
-Betriebsart weder `laden` noch `entladen`, bleibt die Integration im sicheren Fall (beide
-Richtungen `0`) statt zu raten.
+und übersetzt jede Änderung in `adapter.write_charge_power()`/`write_discharge_power()`.
+Bei einem Wechsel der Betriebsart wird zuerst die inaktive Richtung auf `0` gesetzt, danach
+die aktive Richtung auf den Leistungsbetrag. Bei unveränderter Richtung entfällt der Nullschritt.
+Fehlt einer der Helfer vollständig, sendet die Bridge keinen Befehl. Eine vorhandene unerwartete
+Betriebsart führt dagegen zu Nullbefehlen für beide Richtungen. Die getrennten Helferänderungen
+bilden keine atomare Transaktion; siehe den gemeinsamen Vertrag.
 
 Diese beiden Entities sind der einzige Kontrakt, den diese Integration von SkytechHEMS
 konsumiert — sie werden nur gelesen, nie geschrieben.
@@ -51,8 +53,8 @@ konsumiert — sie werden nur gelesen, nie geschrieben.
 Den zuletzt tatsächlich gesendeten Sollwert liest man **nicht** an `number.<prefix>_soll_*` ab
 (die bleiben davon unberührt, siehe [bekannte-luecken.md](bekannte-luecken.md)), sondern an
 `sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` — `assumed_state` wie
-`number.*`, `unavailable` bis zum ersten erfolgreichen Sync, bleibt bei einem Schreibfehler
-bewusst auf dem letzten bekannten Wert stehen (D-010).
+`number.*`, `unavailable` bis zum ersten erfolgreichen Sync und nach einem behandelten
+Schreibfehler (D-013). Ein bloßer Lesefehler macht diese Sollsensoren nicht unverfügbar.
 
 Ein zusätzlicher Schalter, `switch.<prefix>_hems_steuerung_aktiv`, pausiert/setzt die
 automatischen Schreibvorgänge dieser Anbindung fort (D-011) — Standard nach jedem Neustart ist

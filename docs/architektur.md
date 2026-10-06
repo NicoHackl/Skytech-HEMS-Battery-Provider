@@ -127,8 +127,8 @@ Bei jedem erfolgreichen Sync merkt sich `hems_bridge.py` den gesendeten Wert als
 `HemsCommandState` (`last_command`, siehe [datenmodell.md](datenmodell.md)) — `sensor.py` liest
 das für zwei zusätzliche, nur bei HEMS-Präfix angelegte Sensoren aus (D-010): anders als die
 übrigen Sensoren kommt dieser Wert nicht aus dem gepollten `StorageState`, sondern direkt aus der
-HEMS-Anbindung, und bleibt bei einem Schreibfehler bewusst auf dem letzten bekannten Stand stehen
-statt auf „nicht verfügbar" zu springen.
+HEMS-Anbindung. Der intern gespeicherte letzte Erfolg bleibt erhalten, die Sensoren werden bei
+behandelten Schreibfehlern aber über `write_ok` nicht verfügbar (D-013).
 
 Ein optionaler Schalter (`switch.<prefix>_hems_steuerung_aktiv`, D-011) pausiert/setzt diesen
 Schreibpfad fort, ohne den HEMS-Vertrag selbst oder D-009 zu ändern — ausgeschaltet lässt sich
