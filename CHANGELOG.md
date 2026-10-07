@@ -15,6 +15,9 @@ Datei angefasst wurde.
 
 - Gemeinsame Contract-Ablage mit einem Ordner je Projektpaar und aktualisierten Verweisen.
 - Aktueller Austausch mit HEMS einschließlich bestehender Kompatibilitäts- und Betriebsgrenzen dokumentiert.
+- Vertrag Version 1.1: Das HEMS-Lebenszeichen `sensor.skytech_hems_status` ist als Entwurf beschrieben
+  (Speicher stoppt bei ausbleibendem Lebenszeichen). Es ist noch nicht umgesetzt; Umsetzungsreihenfolge:
+  `umsetzungsplan.md` im Repo Skytech-HEMS-Wallbox-Provider.
 - Regel zur Pflege projektübergreifender Verträge in `AGENTS.md` verankert, damit KI-Assistenten sie automatisch beachten.
 
 

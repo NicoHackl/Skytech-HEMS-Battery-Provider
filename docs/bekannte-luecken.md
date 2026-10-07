@@ -2,7 +2,7 @@
 
 ## Gemeinsamer Contract-Stand — 06.10.2026
 
-Die zwei HEMS-Ausgabehelfer sind nicht atomar, ihre Vorzeichenkonsistenz wird nicht geprüft. Keep-Alive erkennt keinen HEMS-Ausfall; fehlende Helfer und eine pausierte Bridge lösen keinen eigenen Stopp aus.
+Die zwei HEMS-Ausgabehelfer sind nicht atomar, ihre Vorzeichenkonsistenz wird nicht geprüft. Keep-Alive erkennt keinen HEMS-Ausfall (ein Lebenszeichen ist als Entwurf in Vertrag Version 1.1 beschrieben, nicht implementiert); fehlende Helfer und eine pausierte Bridge lösen keinen eigenen Stopp aus.
 Details und geprüfte Codebasis: [gemeinsamer Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md).
 
 **Vor jeder Annahme lesen.** Diese Datei existiert, weil Doku und Code auseinanderlaufen. Steht
