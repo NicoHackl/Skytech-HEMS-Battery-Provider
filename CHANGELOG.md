@@ -11,6 +11,20 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Hinzugefügt — 07.10.2026
+
+- **Speicher stoppt, wenn SkytechHEMS ausfällt.** Mit SkytechHEMS-Anbindung setzt die Integration
+  dessen Sollwerte nur noch um, solange das HEMS regelmäßig ein Lebenszeichen schickt. Bleibt es
+  länger als das Dreifache der HEMS-Zykluszeit aus, geht der Speicher auf 0 W und übernimmt beim
+  nächsten HEMS-Zyklus wieder von selbst. Die Frist lässt sich in den Einstellungen des Geräts
+  ändern (Faktor 2–10).
+- **Neuer Sensor „HEMS-Lebenszeichen"** zeigt, ob das HEMS gerade steuert.
+
+### Geändert — 07.10.2026
+
+- Nach einem Neustart von Home Assistant oder der Integration bleibt der Speicher auf 0 W, bis das
+  HEMS einen neuen Zyklus gerechnet hat — ein alter Sollwert startet keine Ladung mehr.
+
 ### Dokumentation — 06.10.2026
 
 - Gemeinsame Contract-Ablage mit einem Ordner je Projektpaar und aktualisierten Verweisen.

@@ -46,15 +46,17 @@
   "options": {
     "step": {
       "init": {
-        "title": "Abfrageintervall ändern",
-        "description": "Wie oft dieser Speicher abgefragt wird. Änderung wirkt sofort, ohne HA-Neustart.",
+        "title": "Einstellungen ändern",
+        "description": "Wie oft dieser Speicher abgefragt wird und — mit SkytechHEMS-Anbindung — wie lange er ohne Lebenszeichen des HEMS weiter dessen Sollwert umsetzt. Änderungen wirken sofort, ohne HA-Neustart.",
         "data": {
-          "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)"
+          "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)",
+          "hems_timeout_factor": "Frist ohne HEMS-Lebenszeichen (Vielfaches der HEMS-Zykluszeit, 2–10). Danach geht der Speicher auf 0 W."
         }
       }
     },
     "error": {
-      "invalid_update_interval": "Abfrageintervall muss zwischen 1 und 60 Sekunden liegen."
+      "invalid_update_interval": "Abfrageintervall muss zwischen 1 und 60 Sekunden liegen.",
+      "invalid_hems_timeout_factor": "Der Faktor muss zwischen 2 und 10 liegen."
     }
   },
   "entity": {
@@ -86,6 +88,11 @@
     "switch": {
       "hems_steuerung_aktiv": {
         "name": "HEMS-Steuerung"
+      }
+    },
+    "binary_sensor": {
+      "hems_lebenszeichen": {
+        "name": "HEMS-Lebenszeichen"
       }
     }
   }

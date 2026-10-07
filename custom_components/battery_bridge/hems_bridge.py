@@ -51,6 +51,13 @@ gegenteilige Annahme aus D-008 (dort noch: kein automatischer Refresh-Loop nöti
 senden bei Bedarf selbst erneut) — traf so nicht zu, siehe ADR D-012. Bei E3DC ist der Takt zwingend
 kurz: das Gerät übernimmt nach rund 10 s ohne neuen Sollwert selbst wieder (D-015) — deshalb wird
 dort auch ein Sollwert von 0 W (Betriebsart „standby") laufend erneut gesendet.
+
+Lebenszeichen (D-016): Übersetzt wird nur, solange `sensor.skytech_hems_status` frisch ist
+(`heartbeat.py`). Steht das HEMS still, während HA weiterläuft, bliebe sonst ein alter Sollwert
+unbegrenzt aktiv — der Keep-Alive hielte ihn sogar am Leben. Nicht frisch heißt: beide Richtungen
+auf 0, wie bei „standby", und zwar auch im Keep-Alive-Takt. Nach dem Start gilt das Lebenszeichen
+erst nach einem frisch gesehenen HEMS-Zyklus; bis dahin bleibt der Speicher auf 0. Pausiert
+(switch.py) wird das Lebenszeichen nicht ausgewertet — die Pause schreibt ohnehin nichts.
 """
 
 from __future__ import annotations
@@ -58,13 +65,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 
 from .adapters.base import StorageAdapterError
+from .heartbeat import DEFAULT_TIMEOUT_FACTOR, STATUS_ENTITY_ID, HemsHeartbeat
 
 if TYPE_CHECKING:
     from .coordinator import BatteryBridgeCoordinator
@@ -76,6 +84,11 @@ _LOGGER = logging.getLogger(__name__)
 # nicht raten, was ein unerwarteter Wert bedeuten könnte.
 _MODE_LADEN = "laden"
 _MODE_ENTLADEN = "entladen"
+_MODE_STANDBY = "standby"
+
+# Wie oft die Frische des Lebenszeichens geprüft wird. Unabhängig vom Keep-Alive-Takt (Marstek
+# 60 s), damit ein ausbleibendes HEMS nicht erst eine Minute nach Fristablauf zum Stopp führt.
+_HEARTBEAT_CHECK_INTERVAL = timedelta(seconds=5)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -89,7 +102,12 @@ class HemsCommandState:
 class HemsBridge:
     """Beobachtet die HEMS-Anforderungshelfer eines Präfixes, übersetzt sie live in Sollwerte."""
 
-    def __init__(self, coordinator: BatteryBridgeCoordinator, hems_entity_prefix: str) -> None:
+    def __init__(
+        self,
+        coordinator: BatteryBridgeCoordinator,
+        hems_entity_prefix: str,
+        timeout_factor: float = DEFAULT_TIMEOUT_FACTOR,
+    ) -> None:
         self._coordinator = coordinator
         self._hass: HomeAssistant = coordinator.hass
         self._prefix = hems_entity_prefix
@@ -97,6 +115,11 @@ class HemsBridge:
         self._mode_entity_id = f"input_select.ems_{hems_entity_prefix}_anforderung_betriebsart"
         self._unsub: Callable[[], None] | None = None
         self._unsub_keepalive: Callable[[], None] | None = None
+        self._unsub_heartbeat: Callable[[], None] | None = None
+        self._unsub_heartbeat_check: Callable[[], None] | None = None
+        self._heartbeat = HemsHeartbeat(timeout_factor)
+        # Zuletzt festgestellte Frische — nur ihr Wechsel löst einen Sync und eine Logzeile aus.
+        self._heartbeat_fresh = False
         self._warned_missing = False
         # Zuletzt erfolgreich angewendete Betriebsart — nur bei einem Wechsel gegenüber diesem
         # Wert wird die inaktive Richtung auf 0 gesetzt (siehe Moduldoc). `None` vor dem ersten
@@ -125,6 +148,11 @@ class HemsBridge:
     def write_ok(self) -> bool:
         """Ob der letzte Schreibversuch durchkam — für `sensor.py` (siehe Moduldoc)."""
         return self._write_ok
+
+    @property
+    def heartbeat_fresh(self) -> bool:
+        """Ob das HEMS-Lebenszeichen aktuell frisch ist — für `binary_sensor.py`."""
+        return self._heartbeat_fresh
 
     @property
     def enabled(self) -> bool:
@@ -158,6 +186,18 @@ class HemsBridge:
             self._async_handle_keepalive,
             self._coordinator.adapter.keepalive_interval,
         )
+        # Ausgangslage des Lebenszeichens: der vorgefundene Wert belegt keinen frischen Zyklus.
+        status = self._hass.states.get(STATUS_ENTITY_ID)
+        self._heartbeat.observe(
+            None if status is None else status.state,
+            None if status is None else status.attributes,
+        )
+        self._unsub_heartbeat = async_track_state_change_event(
+            self._hass, [STATUS_ENTITY_ID], self._async_handle_heartbeat
+        )
+        self._unsub_heartbeat_check = async_track_time_interval(
+            self._hass, self._async_handle_heartbeat_check, _HEARTBEAT_CHECK_INTERVAL
+        )
         await self._async_sync()
 
     def async_unload(self) -> None:
@@ -168,6 +208,12 @@ class HemsBridge:
         if self._unsub_keepalive is not None:
             self._unsub_keepalive()
             self._unsub_keepalive = None
+        if self._unsub_heartbeat is not None:
+            self._unsub_heartbeat()
+            self._unsub_heartbeat = None
+        if self._unsub_heartbeat_check is not None:
+            self._unsub_heartbeat_check()
+            self._unsub_heartbeat_check = None
 
     async def _async_handle_event(self, _event: Event) -> None:
         await self._async_sync()
@@ -178,9 +224,44 @@ class HemsBridge:
         # `_enabled` selbst, ein pausierter Sync (switch.py, D-011) bleibt also auch hier stumm.
         await self._async_sync()
 
+    async def _async_handle_heartbeat(self, event: Event) -> None:
+        new_state = event.data.get("new_state")
+        self._heartbeat.observe(
+            None if new_state is None else new_state.state,
+            None if new_state is None else new_state.attributes,
+        )
+        await self._async_check_heartbeat()
+
+    async def _async_handle_heartbeat_check(self, _now: datetime) -> None:
+        await self._async_check_heartbeat()
+
+    async def _async_check_heartbeat(self) -> None:
+        """Bei einem Wechsel der Frische sofort synchronisieren (Stopp oder Wiederaufnahme)."""
+        fresh = self._heartbeat.is_fresh()
+        if fresh == self._heartbeat_fresh:
+            return
+        self._heartbeat_fresh = fresh
+        if fresh:
+            _LOGGER.info(
+                "HEMS-Lebenszeichen wieder da (%s) — HEMS steuert den Speicher.", self._prefix
+            )
+        else:
+            _LOGGER.warning(
+                "HEMS-Lebenszeichen ausgeblieben (%s) — Speicher wird auf 0 W gesetzt.",
+                self._prefix,
+            )
+        self._coordinator.async_update_listeners()
+        await self._async_sync()
+
     async def _async_sync(self) -> None:
         """Aktuelle HEMS-Anforderung lesen und als Sollwert(e) an den Adapter senden."""
         if not self._enabled:
+            return
+
+        if not self._heartbeat.is_fresh():
+            # Kein frischer HEMS-Zyklus: sicherer Fall unabhängig von den Helfern (D-016).
+            self._heartbeat_fresh = False
+            await self._async_apply(_MODE_STANDBY, 0.0)
             return
 
         mode_state = self._hass.states.get(self._mode_entity_id)
@@ -199,9 +280,11 @@ class HemsBridge:
             return
         self._warned_missing = False
 
-        leistung_w = _parse_leistung(power_state.state)
+        await self._async_apply(mode_state.state, _parse_leistung(power_state.state))
+
+    async def _async_apply(self, mode: str, leistung_w: float) -> None:
+        """Betriebsart und Betrag an den Adapter senden; Fehler- und Erfolgsbuchführung."""
         adapter = self._coordinator.adapter
-        mode = mode_state.state
         # Nur bei einem tatsächlichen Wechsel der Betriebsart gegenüber dem letzten erfolgreichen
         # Sync die inaktive Richtung zurücksetzen — sonst sendet jede reine Leistungsanpassung
         # bei unveränderter Richtung einen unnötigen Zero-Befehl auf dasselbe Passive-Mode-Feld
@@ -251,6 +334,9 @@ class HemsBridge:
         self._write_ok = True
         self._last_applied_mode = mode
         self._last_command = command
+        # Die HEMS-Soll-Sensoren hängen an `last_command`, nicht am Poll: sofort aktualisieren.
+        # Der angeforderte Refresh ist entprellt und käme bei schnell folgenden Syncs zu spät.
+        self._coordinator.async_update_listeners()
         await self._coordinator.async_request_refresh()
 
 

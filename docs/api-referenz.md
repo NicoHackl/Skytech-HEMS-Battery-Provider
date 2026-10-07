@@ -21,6 +21,7 @@ ein `device_info` (Hersteller, Modell, `unique_id` des Entry).
 | `sensor.<prefix>_hems_soll_ladeleistung` | sensor | W | lesen | umgesetzt (D-010), nur mit HEMS-Präfix |
 | `sensor.<prefix>_hems_soll_entladeleistung` | sensor | W | lesen | umgesetzt (D-010), nur mit HEMS-Präfix |
 | `switch.<prefix>_hems_steuerung_aktiv` | switch | – | schreiben | umgesetzt (D-011), nur mit HEMS-Präfix |
+| `binary_sensor.<prefix>_hems_lebenszeichen` | binary_sensor | – | lesen | umgesetzt (D-016), nur mit HEMS-Präfix |
 
 `number.*` liest sich nicht vom Gerät zurück (weder die Marstek Local API noch E3DC-RSCP bieten
 dafür einen Read-Pfad) — die Entity zeigt den zuletzt erfolgreich gesendeten Wert (`assumed_state`), nicht
@@ -54,7 +55,13 @@ Den zuletzt tatsächlich gesendeten Sollwert liest man **nicht** an `number.<pre
 (die bleiben davon unberührt, siehe [bekannte-luecken.md](bekannte-luecken.md)), sondern an
 `sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` — `assumed_state` wie
 `number.*`, `unavailable` bis zum ersten erfolgreichen Sync und nach einem behandelten
-Schreibfehler (D-013). Ein bloßer Lesefehler macht diese Sollsensoren nicht unverfügbar.
+Schreibfehler (D-013). Steht der Speicher mangels HEMS-Lebenszeichen auf 0 W, zeigen sie `0`.
+
+**HEMS-Lebenszeichen (D-016):** Die Anbindung setzt HEMS-Sollwerte nur um, solange
+`sensor.skytech_hems_status` frisch ist; sonst gehen beide Richtungen auf 0 W, auch im
+Keep-Alive-Takt. Nach dem Start gilt es erst nach einem frisch gesehenen HEMS-Zyklus. Felder und
+Frist: [Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md#hems-lebenszeichen).
+`binary_sensor.<prefix>_hems_lebenszeichen` zeigt den Zustand (an = frisch). Ein bloßer Lesefehler macht diese Sollsensoren nicht unverfügbar.
 
 Ein zusätzlicher Schalter, `switch.<prefix>_hems_steuerung_aktiv`, pausiert/setzt die
 automatischen Schreibvorgänge dieser Anbindung fort (D-011) — Standard nach jedem Neustart ist

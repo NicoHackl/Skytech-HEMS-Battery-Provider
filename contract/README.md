@@ -21,4 +21,4 @@ Beschreibung der gemeinsamen Felder zu führen.
 
 | Gegenstelle | Vertrag | Stand / Hinweise |
 |---|---|---|
-| HEMS | [contract_hems_battery_provider.md](contract_hems_battery_provider/contract_hems_battery_provider.md) | Aktueller Austausch einschließlich dokumentierter Betriebsgrenzen; HEMS-Lebenszeichen als Entwurf (Version 1.1). |
+| HEMS | [contract_hems_battery_provider.md](contract_hems_battery_provider/contract_hems_battery_provider.md) | Aktueller Austausch einschließlich dokumentierter Betriebsgrenzen; HEMS-Lebenszeichen implementiert (Version 1.1). |

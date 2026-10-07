@@ -13,7 +13,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.battery_bridge.adapters.base import StorageAdapterError
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
 from custom_components.battery_bridge.models import StorageState
-from tests.conftest import entity_ids_by_key, make_marstek_entry
+from tests.conftest import entity_ids_by_key, hems_zyklus, make_marstek_entry
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -45,6 +45,8 @@ async def _setup_loaded_entry(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    if hems_entity_prefix:
+        await hems_zyklus(hass)  # frischer HEMS-Zyklus nach dem Start (D-016)
     assert entry.state is ConfigEntryState.LOADED
 
     return entry, entity_ids_by_key(hass, entry)
@@ -81,15 +83,15 @@ async def test_hems_sensoren_werden_nur_mit_hems_praefix_angelegt(
     assert "hems_soll_entladeleistung" not in entity_ids
 
 
-async def test_hems_sensoren_nicht_verfuegbar_vor_erstem_sync(
+async def test_hems_sensoren_zeigen_null_nach_start_ohne_helfer(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """HEMS-Präfix gesetzt, aber die HEMS-Helfer existieren (noch) nicht → kein erfolgreicher
-    Sync bisher → beide Sensoren `unavailable`, kein geratener Ersatzwert."""
+    """HEMS-Präfix gesetzt, HEMS-Helfer fehlen noch: beim Start ging der Speicher mangels frischem
+    HEMS-Zyklus erfolgreich auf 0 (D-016) — die Sensoren zeigen genau diesen gesendeten Wert."""
     _entry, entity_ids = await _setup_loaded_entry(hass, monkeypatch, hems_entity_prefix=_PREFIX)
 
-    assert hass.states.get(entity_ids["hems_soll_ladeleistung"]).state == "unavailable"
-    assert hass.states.get(entity_ids["hems_soll_entladeleistung"]).state == "unavailable"
+    assert hass.states.get(entity_ids["hems_soll_ladeleistung"]).state == "0.0"
+    assert hass.states.get(entity_ids["hems_soll_entladeleistung"]).state == "0.0"
 
 
 async def test_hems_soll_ladeleistung_zeigt_gesendeten_wert(

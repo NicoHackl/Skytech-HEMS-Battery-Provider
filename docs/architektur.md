@@ -58,6 +58,8 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (aktue
 | `sensor.py` | `StorageState`-Felder als HA-Entities abbilden; bei aktiver HEMS-Anbindung zusätzlich `HemsBridge.last_command` (siehe unten) | Eigene Poll- oder Verbindungslogik — das ist Aufgabe des Coordinators/Adapters |
 | `number.py` | Soll-Werte entgegennehmen, Schreibaufrufe an den Adapter durchreichen, Fehler als HA-Fehler melden | Eigene Poll- oder Verbindungslogik |
 | `hems_bridge.py` (optional, nur mit HEMS-Präfix) | HEMS' Anforderungshelfer (`input_number`/`input_select`) beobachten, bei Änderung 1:1 in Adapter-Schreibaufrufe übersetzen (D-009) | Eigene Regel- oder Verteilungslogik — nur Übersetzung; andere Entities als die eigenen HEMS-Helfer lesen |
+| `heartbeat.py` | Regeln des HEMS-Lebenszeichens (D-016): Ausgangslage, Änderung, Frist — ohne HA-Import | Auf HA zugreifen, Gerätebefehle senden |
+| `binary_sensor.py` (optional, nur mit HEMS-Präfix) | Zeigt, ob das HEMS-Lebenszeichen frisch ist (D-016) | Selbst etwas schalten |
 | `switch.py` (optional, nur mit HEMS-Präfix) | Ein Schalter je Speicher: pausiert/setzt die automatischen Schreibvorgänge von `hems_bridge.py` fort (D-011) | Eigene Poll- oder Verbindungslogik; einen Geräte-Sollwert selbst ändern |
 
 Regel: Keine Komponente übernimmt Aufgaben einer anderen. Verschiebt sich eine Verantwortung,
@@ -156,6 +158,8 @@ custom_components/battery_bridge/
 │                                     #   optional: HEMS-Soll-Lade-/Entladeleistung-W (D-010)
 ├── number.py                         # Soll-Ladeleistung-W, Soll-Entladeleistung-W
 ├── hems_bridge.py                     # optional: HEMS-Anforderungshelfer → Adapter (D-009)
+├── heartbeat.py                       # Regeln des HEMS-Lebenszeichens (D-016)
+├── binary_sensor.py                   # optional: HEMS-Lebenszeichen (D-016)
 ├── switch.py                           # optional: HEMS-Steuerung pausieren/fortsetzen (D-011)
 └── strings.json / translations/de.json   # Config-Flow- und Entity-Texte (identisch, siehe unten)
 

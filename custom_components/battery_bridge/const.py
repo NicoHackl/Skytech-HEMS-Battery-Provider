@@ -21,6 +21,10 @@ CONF_HEMS_ENTITY_PREFIX: Final = "hems_entity_prefix"
 # da nur Options-Änderungen den bestehenden Entry automatisch neu laden (siehe __init__.py).
 CONF_UPDATE_INTERVAL: Final = "update_interval_seconds"
 
+# Frist-Faktor für das HEMS-Lebenszeichen (heartbeat.py, D-016): Frist = Faktor × Zykluslänge des
+# HEMS. Nur mit HEMS-Anbindung im Options-Flow sichtbar. Default/Grenzen aus dem Vertrag.
+CONF_HEMS_TIMEOUT_FACTOR: Final = "hems_timeout_factor"
+
 # Hersteller/Protokoll als stabile IDs (Regel: Hersteller × Protokoll, siehe D-006). Ein weiterer
 # Adapter braucht hier nur einen neuen Eintrag, keine Umstellung des Config-Flows.
 MANUFACTURER_MARSTEK: Final = "marstek"
