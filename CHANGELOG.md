@@ -11,6 +11,13 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Dokumentation — 12.10.2026
+
+- Stand des E3DC-Adapters nachgetragen: An der Referenzanlage ist der E3DC als Speicher
+  eingerichtet und wird von SkytechHEMS gesteuert (dort D-063). Die Abnahmepunkte des Adapters
+  bleiben offen, bis sie bestätigt sind. Hinweis ergänzt, dass die Automation „E3DC Manuelle
+  Leistung“ noch eingeschaltet ist.
+
 ### Hinzugefügt — 07.10.2026
 
 - **Speicher stoppt, wenn SkytechHEMS ausfällt.** Mit SkytechHEMS-Anbindung setzt die Integration

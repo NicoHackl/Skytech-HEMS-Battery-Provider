@@ -325,6 +325,11 @@ Schreibaufrufe, die sie auslöst, laufen über denselben unverifizierten Marstek
 
 ## E3DC — vor dem produktiven Einsatz zu bestätigen (D-015)
 
+Stand 12.10.2026: Der E3DC läuft an der Referenzanlage bereits unter HEMS-Steuerung (SkytechHEMS
+D-063). Die Punkte unten sind damit nicht automatisch bestätigt. Bestätigungen werden hier mit
+Datum eingetragen. Zum Parallelbetrieb: `automation.e3dc_manuelle_leistung` war am 12.10.2026 noch
+eingeschaltet, `automation.pye3dc_max_ladeleistung_speicher_setzen` ausgeschaltet.
+
 | Frage | Betrifft | Blockiert |
 |---|---|---|
 | Vorzeichen von `consumption.battery` aus `E3DC.poll()` (laut pye3dc-Doku positiv = laden) — gegen `sensor.e3dc_leistung_batterie_modbus` abgleichen | `adapters/e3dc_rscp.py: read()` | Verlässliche Ist-Lade-/Entladeleistung |

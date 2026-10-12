@@ -84,6 +84,7 @@ Hardware-Verifikation macht der User selbst an der echten Anlage.
 | Schritt | Stand |
 |---|---|
 | Adapter `adapters/e3dc_rscp.py` (RSCP über pye3dc), Config-Flow-Schritt, Keep-Alive 5 s | fertig (23.09.2026) |
+| An der Referenzanlage eingerichtet: Eintrag „E3DC Speicher“ (24.09.2026), im SkytechHEMS als Speicher `e3dc_speicher` geführt (dort D-063), Schalter „HEMS-Steuerung“ an | in Betrieb (Stand 12.10.2026) |
 | An echter Anlage: Istwerte gegen bisherige Modbus-Sensoren abgleichen, HEMS laden/entladen/standby jeweils > 10 s stabil, Schalter aus → E3DC regelt selbst | offen |
 | Nach Bestätigung: pyscript-Automation „E3DC Manuelle Leistung" für HEMS nicht mehr nötig | offen |
 
