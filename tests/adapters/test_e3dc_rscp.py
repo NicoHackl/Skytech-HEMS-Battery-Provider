@@ -35,6 +35,11 @@ class _FakeE3DC:
         self.poll_error: Exception | None = None
         self.send_error: Exception | None = None
         self.disconnected = False
+        # Gerätestatus (D-017): EMS-Statusbitfeld und pye3dc-Systemstatus.
+        self.ems_status: Any = 132  # Wert der Referenzanlage, keine Sperre
+        self.system_status: dict[str, Any] = {"emergencyReserveReached": False}
+        self.status_error: Exception | None = None
+        self.status_requests = 0
 
     def poll(self, keepAlive: bool = False) -> dict[str, Any]:
         if self.poll_error is not None:
@@ -46,6 +51,18 @@ class _FakeE3DC:
             raise self.send_error
         self.requests.append(request)
         return ("EMS_SET_POWER", "Int32", request[2][1][2])
+
+    def sendRequestTag(self, tag: Any, retries: int = 3, keepAlive: bool = False) -> Any:
+        assert tag == "EMS_REQ_STATUS"
+        if self.status_error is not None:
+            raise self.status_error
+        self.status_requests += 1
+        return self.ems_status
+
+    def get_system_status(self, keepAlive: bool = False) -> dict[str, Any]:
+        if self.status_error is not None:
+            raise self.status_error
+        return self.system_status
 
     def disconnect(self) -> None:
         self.disconnected = True
@@ -216,3 +233,93 @@ async def test_close_trennt_die_sitzung(fake_e3dc: list[_FakeE3DC]) -> None:
     assert fake_e3dc[0].disconnected is True
     with pytest.raises(StorageAdapterError):
         await adapter.read()
+
+
+async def test_ems_status_ohne_sperrbits_gibt_beide_richtungen_frei(
+    fake_e3dc: list[_FakeE3DC],
+) -> None:
+    """D-017: 132 (Referenzanlage, Bit 2 und 7) sperrt nichts; Rohwert bleibt sichtbar."""
+    adapter = await _connected_adapter()
+    state = await adapter.read()
+
+    assert state.charge_allowed is True
+    assert state.discharge_allowed is True
+    assert state.lock_reasons == ()
+    assert state.raw_status == 132
+
+
+@pytest.mark.parametrize(
+    ("ems_status", "charge", "discharge", "reasons"),
+    [
+        (0b1, False, True, ("geraet_laden_gesperrt",)),
+        (0b10, True, False, ("geraet_entladen_gesperrt",)),
+        (0b100000, False, True, ("ladesperrzeit",)),
+        (0b1000000, True, False, ("entladesperrzeit",)),
+        (0b11, False, False, ("geraet_laden_gesperrt", "geraet_entladen_gesperrt")),
+    ],
+)
+async def test_ems_status_sperrbits_werden_abgebildet(
+    fake_e3dc: list[_FakeE3DC],
+    ems_status: int,
+    charge: bool,
+    discharge: bool,
+    reasons: tuple[str, ...],
+) -> None:
+    adapter = await _connected_adapter()
+    fake_e3dc[0].ems_status = ems_status
+    state = await adapter.read()
+
+    assert state.charge_allowed is charge
+    assert state.discharge_allowed is discharge
+    assert state.lock_reasons == reasons
+
+
+async def test_notstromreserve_sperrt_entladen(fake_e3dc: list[_FakeE3DC]) -> None:
+    adapter = await _connected_adapter()
+    fake_e3dc[0].system_status = {"emergencyReserveReached": True}
+    state = await adapter.read()
+
+    assert state.charge_allowed is True
+    assert state.discharge_allowed is False
+    assert state.lock_reasons == ("notstromreserve",)
+
+
+async def test_fehlgeschlagene_statusabfrage_laesst_freigaben_offen(
+    fake_e3dc: list[_FakeE3DC],
+) -> None:
+    """Scheitert nur die Statusabfrage, bleibt der Messwert-Poll gültig (Vertrag 1.2)."""
+    adapter = await _connected_adapter()
+    fake_e3dc[0].status_error = SendError("Max retries reached")
+    state = await adapter.read()
+
+    assert state.available is True
+    assert state.soc_percent == 92
+    assert state.charge_allowed is None
+    assert state.discharge_allowed is None
+    assert state.raw_status is None
+
+
+async def test_unerwarteter_statuswert_wird_nicht_geraten(fake_e3dc: list[_FakeE3DC]) -> None:
+    adapter = await _connected_adapter()
+    fake_e3dc[0].ems_status = "132"
+    state = await adapter.read()
+
+    assert state.charge_allowed is None
+    assert state.discharge_allowed is None
+
+
+async def test_status_wird_nur_im_status_takt_abgefragt(
+    fake_e3dc: list[_FakeE3DC], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [500.0]
+    monkeypatch.setattr(e3dc_rscp.time, "monotonic", lambda: now[0])
+    adapter = await _connected_adapter()
+
+    await adapter.read()
+    now[0] += 5
+    await adapter.read()
+    now[0] += 11
+    await adapter.read()
+
+    assert fake_e3dc[0].status_requests == 2
+

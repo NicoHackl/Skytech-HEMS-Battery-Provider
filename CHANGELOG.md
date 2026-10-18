@@ -11,6 +11,18 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Hinzugefügt — 18.10.2026
+
+- **Neuer Sensor „HEMS-Schnittstelle"** (nur mit SkytechHEMS-Anbindung). Er zeigt auf einen Blick,
+  ob der Speicher bereit ist, ob das Gerät Laden oder Entladen gerade selbst sperrt oder ob die
+  Verbindung fehlt. In seinen Attributen steht alles, was zwischen SkytechHEMS und Speicher
+  ausgetauscht wird: Ladezustand, Ist-Leistungen, Freigaben, die Anforderung des HEMS und der
+  zuletzt gesendete Sollwert. SkytechHEMS kann den Speicher künftig über diesen einen Sensor
+  einbinden und erfährt so, wenn das Gerät eine Richtung sperrt.
+- Die Integration liest die Lade- und Entladefreigabe direkt am Gerät: beim Marstek die
+  Freigaben des Akkus, beim E3DC Lade-/Entladesperre, Sperrzeiten und Notstromreserve.
+  Abgefragt wird höchstens alle 15 Sekunden.
+
 ### Dokumentation — 12.10.2026
 
 - Stand des E3DC-Adapters nachgetragen: An der Referenzanlage ist der E3DC als Speicher

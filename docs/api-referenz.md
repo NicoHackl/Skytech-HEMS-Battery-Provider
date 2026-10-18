@@ -22,6 +22,7 @@ ein `device_info` (Hersteller, Modell, `unique_id` des Entry).
 | `sensor.<prefix>_hems_soll_entladeleistung` | sensor | W | lesen | umgesetzt (D-010), nur mit HEMS-Präfix |
 | `switch.<prefix>_hems_steuerung_aktiv` | switch | – | schreiben | umgesetzt (D-011), nur mit HEMS-Präfix |
 | `binary_sensor.<prefix>_hems_lebenszeichen` | binary_sensor | – | lesen | umgesetzt (D-016), nur mit HEMS-Präfix |
+| `sensor.<prefix>_hems_schnittstelle` | sensor (enum) | – | lesen | umgesetzt (D-017), nur mit HEMS-Präfix |
 
 `number.*` liest sich nicht vom Gerät zurück (weder die Marstek Local API noch E3DC-RSCP bieten
 dafür einen Read-Pfad) — die Entity zeigt den zuletzt erfolgreich gesendeten Wert (`assumed_state`), nicht
@@ -62,6 +63,15 @@ Schreibfehler (D-013). Steht der Speicher mangels HEMS-Lebenszeichen auf 0 W, ze
 Keep-Alive-Takt. Nach dem Start gilt es erst nach einem frisch gesehenen HEMS-Zyklus. Felder und
 Frist: [Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md#hems-lebenszeichen).
 `binary_sensor.<prefix>_hems_lebenszeichen` zeigt den Zustand (an = frisch). Ein bloßer Lesefehler macht diese Sollsensoren nicht unverfügbar.
+
+**Schnittstellen-Sensor (D-017):** `sensor.<prefix>_hems_schnittstelle` bündelt alles, was
+zwischen SkytechHEMS und dieser Integration fließt. State: `bereit`, `laden_gesperrt`,
+`entladen_gesperrt`, `gesperrt` oder `getrennt` (letzter Poll gescheitert). Der Sensor ist immer
+verfügbar. Attribute, Bedeutung und Regeln für das HEMS stehen verbindlich im
+[Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md#schnittstellen-sensor);
+SkytechHEMS liest daraus SoC, Ist-Leistung und die Gerätefreigaben. Die Leistungs- und
+Anforderungswerte sowie `gemessen_am` stehen nicht im Recorder, ihr Verlauf liegt in den
+Einzel-Sensoren.
 
 Ein zusätzlicher Schalter, `switch.<prefix>_hems_steuerung_aktiv`, pausiert/setzt die
 automatischen Schreibvorgänge dieser Anbindung fort (D-011) — Standard nach jedem Neustart ist

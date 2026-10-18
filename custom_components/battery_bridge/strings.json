@@ -75,6 +75,16 @@
       },
       "hems_soll_entladeleistung": {
         "name": "HEMS-Soll-Entladeleistung"
+      },
+      "hems_schnittstelle": {
+        "name": "HEMS-Schnittstelle",
+        "state": {
+          "bereit": "Bereit",
+          "laden_gesperrt": "Laden gesperrt",
+          "entladen_gesperrt": "Entladen gesperrt",
+          "gesperrt": "Laden und Entladen gesperrt",
+          "getrennt": "Keine Verbindung"
+        }
       }
     },
     "number": {

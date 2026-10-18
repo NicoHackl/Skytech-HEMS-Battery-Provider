@@ -63,6 +63,7 @@ erst nach einem frisch gesehenen HEMS-Zyklus; bis dahin bleibt der Speicher auf 
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -97,6 +98,18 @@ class HemsCommandState:
 
     charge_power_w: float
     discharge_power_w: float
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HemsRequestState:
+    """Aktuell in den HEMS-Helfern stehende Anforderung — Spiegel für den Schnittstellen-Sensor.
+
+    Genau das, was die Anbindung liest, nicht was sie daraus macht: `power_w` signiert wie im
+    Helfer (positiv laden, negativ entladen), `None`, wenn der Helfer fehlt oder keine Zahl ist.
+    """
+
+    mode: str | None
+    power_w: float | None
 
 
 class HemsBridge:
@@ -143,6 +156,16 @@ class HemsBridge:
     def last_command(self) -> HemsCommandState | None:
         """Zuletzt erfolgreich an den Adapter gesendeter Sollwert, `None` vor dem ersten Sync."""
         return self._last_command
+
+    @property
+    def request(self) -> HemsRequestState:
+        """Aktueller Stand der beiden HEMS-Helfer, unabhängig von Pause und Lebenszeichen."""
+        mode_state = self._hass.states.get(self._mode_entity_id)
+        power_state = self._hass.states.get(self._power_entity_id)
+        return HemsRequestState(
+            mode=None if mode_state is None else mode_state.state,
+            power_w=None if power_state is None else _parse_signed(power_state.state),
+        )
 
     @property
     def write_ok(self) -> bool:
@@ -216,6 +239,9 @@ class HemsBridge:
             self._unsub_heartbeat_check = None
 
     async def _async_handle_event(self, _event: Event) -> None:
+        # Der Schnittstellen-Sensor spiegelt die Helfer (`request`) — auch während einer Pause,
+        # in der `_async_sync()` nichts schreibt und deshalb selbst nicht anstößt.
+        self._coordinator.async_update_listeners()
         await self._async_sync()
 
     async def _async_handle_keepalive(self, _now: datetime) -> None:
@@ -350,3 +376,12 @@ def _parse_leistung(raw_state: str) -> float:
         return abs(float(raw_state))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _parse_signed(raw_state: str) -> float | None:
+    """Signierten Helferwert für den Spiegel lesen — `None` statt einer geratenen 0."""
+    try:
+        value = float(raw_state)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None

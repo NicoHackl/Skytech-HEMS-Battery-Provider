@@ -28,6 +28,22 @@ derselbe Entry bestehen, es entsteht kein doppelter.
 | `discharge_power_w` | `float \| None` | ja | Ist-Entladeleistung ≥ 0 |
 | `available` | `bool` | ja | Letzte Abfrage erfolgreich |
 | `last_update` | `datetime` | ja | Zeitstempel der letzten gültigen Antwort |
+| `charge_allowed` | `bool \| None` | nein | Ladefreigabe des Geräts (D-017); `None` = Gerät liefert keine Angabe |
+| `discharge_allowed` | `bool \| None` | nein | Entladefreigabe des Geräts (D-017); `None` = Gerät liefert keine Angabe |
+| `lock_reasons` | `tuple[str, ...]` | nein | Stabile Sperrgründe: `geraet_laden_gesperrt`, `geraet_entladen_gesperrt`, `ladesperrzeit`, `entladesperrzeit`, `notstromreserve` |
+| `temperature_c` | `float \| None` | nein | Batterietemperatur in °C (Marstek `bat_temp`) |
+| `rated_capacity_wh` | `float \| None` | nein | Nennkapazität in Wh (Marstek `rated_capacity`) |
+| `raw_status` | `int \| None` | nein | Rohes Statusbitfeld des Geräts (E3DC `EMS_STATUS`), nur Diagnose |
+
+Herkunft der Gerätestatus-Felder je Adapter (höchstens alle `STATUS_POLL_INTERVAL` = 15 s gelesen):
+
+| Feld | Marstek (`Bat.GetStatus`) | E3DC (RSCP) |
+|---|---|---|
+| `charge_allowed` | `charg_flag` | nicht Bit 0 (Laden gesperrt) und nicht Bit 5 (Ladesperrzeit) von `EMS_STATUS` |
+| `discharge_allowed` | `dischrg_flag` | nicht Bit 1 (Entladen gesperrt), nicht Bit 6 (Entladesperrzeit), nicht `emergencyReserveReached` aus `get_system_status()` |
+
+Bedeutung im unteren SoC-Band (Marstek) und Bitbelegung (E3DC) sind an Hardware zu bestätigen,
+siehe [bekannte-luecken.md](bekannte-luecken.md#gerätefreigaben--an-hardware-zu-bestätigen-d-017).
 
 `HemsCommandState` (`hems_bridge.py`), Snapshot des zuletzt erfolgreich an den Adapter gesendeten
 HEMS-Sollwerts — **andere Herkunft als `StorageState`**: nicht vom Adapter-Poll gelesen, sondern
@@ -44,7 +60,15 @@ Leerzustand-Konvention wie bei `StorageState`-Feldern: nie eine geratene 0 vort�
 die Sensoren `sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` — nur
 vorhanden, wenn der Entry ein HEMS-Präfix hat.
 
+`HemsRequestState` (`hems_bridge.py`, Property `HemsBridge.request`): Stand der beiden
+HEMS-Helfer, wie die Anbindung sie liest — `mode` (Text oder `None`, wenn der Helfer fehlt) und
+`power_w` (signiert wie im Helfer, `None` bei fehlendem oder nicht numerischem Wert). Nur Spiegel
+für den Schnittstellen-Sensor, keine Regelgröße.
+
 ## Datenverträge
+
+- Gerätestatus-Felder `None` heißen „das Gerät sagt dazu nichts", nie „gesperrt". Scheitert nur
+  die Statusabfrage, bleibt der Messwert-Poll gültig.
 
 - `None` bedeutet „nicht verfügbar" (ungültige/fehlgeschlagene Abfrage), `0` bedeutet eine
   gemessene Nullleistung. Die beiden werden nie vermischt — ein Adapter, der einen Timeout hat,

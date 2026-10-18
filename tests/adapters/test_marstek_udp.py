@@ -316,7 +316,10 @@ async def test_gleichzeitige_aufrufe_teilen_sich_nicht_die_antwort(
     reply_released.set()
     await task_a
     await task_b
-    assert len(sent) == 2
+    # Je read() genau ein ES.GetStatus; dazu höchstens einmal der Gerätestatus (Bat.GetStatus,
+    # D-017), der im 15-s-Takt zwischengespeichert wird und deshalb hier nur einmal anfällt.
+    assert [request["method"] for request in sent].count("ES.GetStatus") == 2
+    assert [request["method"] for request in sent].count("Bat.GetStatus") == 1
 
 
 async def test_geschlossener_transport_wird_vor_dem_naechsten_aufruf_neu_aufgebaut(
@@ -422,3 +425,108 @@ async def test_alte_antwort_gilt_nicht_als_antwort_auf_den_naechsten_request(
 
     with pytest.raises(StorageAdapterError):
         await adapter.read()
+
+
+def _method_responder(results: dict[str, dict | None]) -> Responder:
+    """Antwort je Methode; `None` als Ergebnis heißt: das Gerät meldet für diese Methode einen
+    Fehler (Antwort ohne `result`)."""
+
+    def responder(request: dict) -> dict:
+        result = results.get(request["method"], {})
+        if result is None:
+            return {"id": request["id"], "src": "test", "error": "nicht unterstützt"}
+        return {"id": request["id"], "src": "test", "result": result}
+
+    return responder
+
+
+async def test_read_liest_geraetefreigaben_aus_bat_getstatus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-017: charg_flag/dischrg_flag landen als Freigabe im StorageState, mit Sperrgrund."""
+    adapter = await _connected_adapter(
+        monkeypatch,
+        _method_responder(
+            {
+                "ES.GetStatus": {"bat_soc": 14, "ongrid_power": 0},
+                "Bat.GetStatus": {
+                    "soc": 14,
+                    "charg_flag": True,
+                    "dischrg_flag": False,
+                    "bat_temp": 21.5,
+                    "rated_capacity": 5120,
+                },
+            }
+        ),
+    )
+    state = await adapter.read()
+
+    assert state.charge_allowed is True
+    assert state.discharge_allowed is False
+    assert state.lock_reasons == ("geraet_entladen_gesperrt",)
+    assert state.temperature_c == 21.5
+    assert state.rated_capacity_wh == 5120
+    assert state.soc_percent == 14  # Messwerte bleiben aus ES.GetStatus
+
+
+async def test_geraetestatus_wird_nur_im_status_takt_abgefragt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bat.GetStatus höchstens alle STATUS_POLL_INTERVAL — der Netzwerkteil des Marstek verträgt
+    keine zusätzliche Abfrage in jedem 5-s-Poll (D-014)."""
+    now = [1000.0]
+    monkeypatch.setattr(marstek_udp.time, "monotonic", lambda: now[0])
+    adapter, transports = await _connected_adapter_with_transports(
+        monkeypatch,
+        _method_responder(
+            {"ES.GetStatus": {"bat_soc": 50}, "Bat.GetStatus": {"dischrg_flag": True}}
+        ),
+    )
+
+    await adapter.read()
+    now[0] += 5
+    second = await adapter.read()
+    now[0] += 11  # 16 s nach der ersten Abfrage
+    await adapter.read()
+
+    methods = [request["method"] for request in transports[0].sent]
+    assert methods.count("ES.GetStatus") == 3
+    assert methods.count("Bat.GetStatus") == 2
+    assert second.discharge_allowed is True  # zwischengespeicherter Wert gilt weiter
+
+
+async def test_fehlender_geraetestatus_laesst_freigaben_offen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Beantwortet das Gerät Bat.GetStatus nicht, bleiben die Freigaben None — der Poll selbst
+    scheitert deswegen nicht (Vertrag 1.2: None = Gerät sagt nichts)."""
+    adapter = await _connected_adapter(
+        monkeypatch,
+        _method_responder({"ES.GetStatus": {"bat_soc": 50}, "Bat.GetStatus": None}),
+    )
+    state = await adapter.read()
+
+    assert state.available is True
+    assert state.soc_percent == 50
+    assert state.charge_allowed is None
+    assert state.discharge_allowed is None
+    assert state.lock_reasons == ()
+
+
+async def test_nicht_boolesche_flags_werden_nicht_geraten(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Liefert das Gerät 0/1 oder Text statt true/false, wird daraus keine Freigabe abgeleitet."""
+    adapter = await _connected_adapter(
+        monkeypatch,
+        _method_responder(
+            {
+                "ES.GetStatus": {"bat_soc": 50},
+                "Bat.GetStatus": {"charg_flag": 0, "dischrg_flag": "1"},
+            }
+        ),
+    )
+    state = await adapter.read()
+
+    assert state.charge_allowed is None
+    assert state.discharge_allowed is None
