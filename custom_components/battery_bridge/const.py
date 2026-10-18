@@ -21,6 +21,10 @@ CONF_HEMS_ENTITY_PREFIX: Final = "hems_entity_prefix"
 # da nur Options-Änderungen den bestehenden Entry automatisch neu laden (siehe __init__.py).
 CONF_UPDATE_INTERVAL: Final = "update_interval_seconds"
 
+# Frist-Faktor für das HEMS-Lebenszeichen (heartbeat.py, D-016): Frist = Faktor × Zykluslänge des
+# HEMS. Nur mit HEMS-Anbindung im Options-Flow sichtbar. Default/Grenzen aus dem Vertrag.
+CONF_HEMS_TIMEOUT_FACTOR: Final = "hems_timeout_factor"
+
 # Hersteller/Protokoll als stabile IDs (Regel: Hersteller × Protokoll, siehe D-006). Ein weiterer
 # Adapter braucht hier nur einen neuen Eintrag, keine Umstellung des Config-Flows.
 MANUFACTURER_MARSTEK: Final = "marstek"
@@ -68,3 +72,17 @@ HEMS_KEEPALIVE_INTERVAL: Final = timedelta(seconds=60)
 # Sollwert (RSCP EMS_REQ_SET_POWER) selbst wieder die Regelung. 5 s lässt einen verpassten Takt
 # zu, bevor das passiert.
 E3DC_KEEPALIVE_INTERVAL: Final = timedelta(seconds=5)
+
+# Abfragetakt des Gerätestatus (Lade-/Entladefreigabe, D-017), getrennt vom Messwert-Poll. Die
+# Adapter fragen ihn im Poll mit ab, aber höchstens in diesem Abstand: der Netzwerkteil des
+# Marstek reagiert empfindlich auf viele Aufrufe (D-014), und eine Gerätesperre hält erfahrungs-
+# gemäß Minuten — 15 s Verzug bis zur Erkennung sind unkritisch.
+STATUS_POLL_INTERVAL: Final = timedelta(seconds=15)
+
+# Stabile Schlüssel der Sperrgründe in `StorageState.lock_reasons` (D-017). Sie stehen im
+# Attribut `sperrgruende` des Schnittstellen-Sensors und sind Teil des HEMS-Vertrags.
+LOCK_CHARGE_DEVICE: Final = "geraet_laden_gesperrt"
+LOCK_DISCHARGE_DEVICE: Final = "geraet_entladen_gesperrt"
+LOCK_CHARGE_TIME: Final = "ladesperrzeit"
+LOCK_DISCHARGE_TIME: Final = "entladesperrzeit"
+LOCK_EMERGENCY_RESERVE: Final = "notstromreserve"

@@ -28,6 +28,14 @@ Deshalb prüft dieser Adapter vor jedem Aufruf selbst, ob der Transport noch leb
 `_RECONNECT_AFTER_FAILED_CALLS` erfolglosen Aufrufen — der Neuaufbau vergibt einen neuen Quellport
 und entspricht damit dem, was bisher nur ein manuelles Neuladen bewirkt hat. Details:
 docs/bekannte-luecken.md, Abschnitt „Verbindung reißt ab" und docs/adr/D-013-udp-reconnect.md.
+
+Gerätestatus (D-017): `Bat.GetStatus` liefert laut Protokoll-Dump `charg_flag` („Charging
+permission flag") und `dischrg_flag` („Discharge permission flag"). Sie werden mit dem Poll
+mitgelesen, aber höchstens alle `STATUS_POLL_INTERVAL` — eine zweite UDP-Abfrage je 5-s-Poll wäre
+für den Netzwerkteil des Geräts zu viel (D-014). Ob das Gerät mit `dischrg_flag: false` genau die
+beobachtete Entladeverweigerung im unteren SoC-Band meldet (Vorfall 18.10.2026), ist **nicht an
+Hardware bestätigt**, siehe docs/bekannte-luecken.md. Scheitert nur diese Abfrage, bleiben die
+Freigaben `None` — der Messwert-Poll scheitert deswegen nicht.
 """
 
 from __future__ import annotations
@@ -36,16 +44,24 @@ import asyncio
 import itertools
 import json
 import logging
+import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from ..const import HEMS_KEEPALIVE_INTERVAL
+from ..const import (
+    HEMS_KEEPALIVE_INTERVAL,
+    LOCK_CHARGE_DEVICE,
+    LOCK_DISCHARGE_DEVICE,
+    STATUS_POLL_INTERVAL,
+)
 from ..models import StorageState
 from .base import StorageAdapterError
 
 _LOGGER = logging.getLogger(__name__)
 
 _METHOD_ES_GET_STATUS = "ES.GetStatus"
+_METHOD_BAT_GET_STATUS = "Bat.GetStatus"
 _METHOD_ES_SET_MODE = "ES.SetMode"
 _REQUEST_TIMEOUT_S = 1.0
 _REQUEST_RETRIES = 3
@@ -64,6 +80,17 @@ _PASSIVE_MODE_DURATION_S = 300
 # (available_charge_power_w/available_discharge_power_w), nicht dieser Integration
 # (Nicht-Ziel: keine Regel-/Verteilungslogik, siehe docs/architektur.md).
 _MAX_POWER_W = 10000
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _DeviceStatus:
+    """Zwischengespeicherte Antwort von `Bat.GetStatus` — `None` heißt „nicht geliefert"."""
+
+    charge_allowed: bool | None = None
+    discharge_allowed: bool | None = None
+    temperature_c: float | None = None
+    rated_capacity_wh: float | None = None
+    lock_reasons: tuple[str, ...] = field(default_factory=tuple)
 
 
 class _MarstekUdpProtocol(asyncio.DatagramProtocol):
@@ -126,6 +153,11 @@ class MarstekUdpAdapter:
         # Ob der Neuaufbau in der laufenden Ausfallphase schon gemeldet wurde, siehe
         # `_log_reconnect()`.
         self._reconnect_logged = False
+        # Gerätestatus aus `Bat.GetStatus` und wann er zuletzt abgefragt wurde (monotone Uhr), siehe
+        # Moduldoc. Auch ein Fehlschlag zählt als Abfrage: ein Gerät, das die Methode nicht
+        # beantwortet, wird so nicht in jedem Poll erneut drei Sekunden lang angefragt.
+        self._device_status = _DeviceStatus()
+        self._device_status_at: float | None = None
 
     async def connect(self) -> None:
         loop = asyncio.get_running_loop()
@@ -217,13 +249,63 @@ class MarstekUdpAdapter:
             ongrid_power = _as_float(result.get("ongrid_power"))
             fallback_bat_power = -ongrid_power if ongrid_power is not None else None
             charge_power_w, discharge_power_w = _split_bat_power(fallback_bat_power)
+        device_status = await self._read_device_status()
         return StorageState(
             soc_percent=_as_float(result.get("bat_soc")),
             charge_power_w=charge_power_w,
             discharge_power_w=discharge_power_w,
             available=True,
             last_update=datetime.now(UTC),
+            charge_allowed=device_status.charge_allowed,
+            discharge_allowed=device_status.discharge_allowed,
+            lock_reasons=device_status.lock_reasons,
+            temperature_c=device_status.temperature_c,
+            rated_capacity_wh=device_status.rated_capacity_wh,
         )
+
+    async def _read_device_status(self) -> _DeviceStatus:
+        """`Bat.GetStatus` höchstens alle `STATUS_POLL_INTERVAL` abfragen (siehe Moduldoc)."""
+        now = time.monotonic()
+        if (
+            self._device_status_at is not None
+            and now - self._device_status_at < STATUS_POLL_INTERVAL.total_seconds()
+        ):
+            return self._device_status
+        self._device_status_at = now
+        try:
+            result = await self._call(_METHOD_BAT_GET_STATUS, {"id": 0})
+        except StorageAdapterError as exc:
+            # Keine Freigabe-Information ist kein Grund, die Messwerte zu verwerfen — die Felder
+            # bleiben `None` („Gerät sagt nichts"), das HEMS wertet das als erlaubt (Vertrag 1.2).
+            _LOGGER.debug(
+                "Gerätestatus (%s) von %s:%s nicht lesbar: %s",
+                _METHOD_BAT_GET_STATUS, self._host, self._port, exc,
+            )
+            self._device_status = _DeviceStatus()
+            return self._device_status
+        # Rohantwort immer ins Debug-Log: die Bedeutung von `dischrg_flag` im unteren SoC-Band ist
+        # noch an Hardware zu bestätigen (docs/bekannte-luecken.md).
+        _LOGGER.debug(
+            "%s von %s:%s — Rohantwort: %r", _METHOD_BAT_GET_STATUS, self._host, self._port, result
+        )
+        charge_allowed = _as_bool(result.get("charg_flag"))
+        discharge_allowed = _as_bool(result.get("dischrg_flag"))
+        lock_reasons = tuple(
+            reason
+            for allowed, reason in (
+                (charge_allowed, LOCK_CHARGE_DEVICE),
+                (discharge_allowed, LOCK_DISCHARGE_DEVICE),
+            )
+            if allowed is False
+        )
+        self._device_status = _DeviceStatus(
+            charge_allowed=charge_allowed,
+            discharge_allowed=discharge_allowed,
+            temperature_c=_as_float(result.get("bat_temp")),
+            rated_capacity_wh=_as_float(result.get("rated_capacity")),
+            lock_reasons=lock_reasons,
+        )
+        return self._device_status
 
     async def write_charge_power(self, watts: float) -> None:
         """Ladeleistung setzen — Passive Mode, `power` negativ = laden (siehe Moduldoc)."""
@@ -334,6 +416,11 @@ def _as_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _as_bool(value: Any) -> bool | None:
+    """Echte JSON-Booleans übernehmen, sonst `None` — keine Zahl oder kein Text wird geraten."""
+    return value if isinstance(value, bool) else None
 
 
 def _split_bat_power(raw: Any) -> tuple[float | None, float | None]:

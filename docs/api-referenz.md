@@ -1,5 +1,7 @@
 # API-Referenz
 
+Gemeinsamer Schnittstellenstand: [HEMS-Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md).
+
 > Dieses Projekt hat keine eigene REST-API. Seine öffentlichen Schnittstellen sind (1) die
 > HA-Entities, die andere Komponenten (allen voran SkytechHEMS) konsumieren, und (2) das
 > `StorageAdapter`-Protocol als Erweiterungspunkt für neue Hersteller/Protokolle.
@@ -19,6 +21,8 @@ ein `device_info` (Hersteller, Modell, `unique_id` des Entry).
 | `sensor.<prefix>_hems_soll_ladeleistung` | sensor | W | lesen | umgesetzt (D-010), nur mit HEMS-Präfix |
 | `sensor.<prefix>_hems_soll_entladeleistung` | sensor | W | lesen | umgesetzt (D-010), nur mit HEMS-Präfix |
 | `switch.<prefix>_hems_steuerung_aktiv` | switch | – | schreiben | umgesetzt (D-011), nur mit HEMS-Präfix |
+| `binary_sensor.<prefix>_hems_lebenszeichen` | binary_sensor | – | lesen | umgesetzt (D-016), nur mit HEMS-Präfix |
+| `sensor.<prefix>_hems_schnittstelle` | sensor (enum) | – | lesen | umgesetzt (D-017), nur mit HEMS-Präfix |
 
 `number.*` liest sich nicht vom Gerät zurück (weder die Marstek Local API noch E3DC-RSCP bieten
 dafür einen Read-Pfad) — die Entity zeigt den zuletzt erfolgreich gesendeten Wert (`assumed_state`), nicht
@@ -38,12 +42,12 @@ verwaltete Entities:
 | `input_number.ems_<hems_entity_prefix>_anforderung_leistung_w` | lesen | Signierter Sollwert: positiv = laden, negativ = entladen |
 | `input_select.ems_<hems_entity_prefix>_anforderung_betriebsart` | lesen | `laden` / `entladen` / `standby` |
 
-und übersetzt jede Änderung in `adapter.write_charge_power()`/`write_discharge_power()` — in
-dieser Reihenfolge zuerst die inaktive Richtung auf `0`, danach die aktive Richtung (Details:
-[architektur.md](architektur.md), [design-entscheidungen.md](design-entscheidungen.md) D-009).
-Fehlen die beiden Entities (falscher Präfix, HEMS-Gerät noch nicht angelegt) oder ist die
-Betriebsart weder `laden` noch `entladen`, bleibt die Integration im sicheren Fall (beide
-Richtungen `0`) statt zu raten.
+und übersetzt jede Änderung in `adapter.write_charge_power()`/`write_discharge_power()`.
+Bei einem Wechsel der Betriebsart wird zuerst die inaktive Richtung auf `0` gesetzt, danach
+die aktive Richtung auf den Leistungsbetrag. Bei unveränderter Richtung entfällt der Nullschritt.
+Fehlt einer der Helfer vollständig, sendet die Bridge keinen Befehl. Eine vorhandene unerwartete
+Betriebsart führt dagegen zu Nullbefehlen für beide Richtungen. Die getrennten Helferänderungen
+bilden keine atomare Transaktion; siehe den gemeinsamen Vertrag.
 
 Diese beiden Entities sind der einzige Kontrakt, den diese Integration von SkytechHEMS
 konsumiert — sie werden nur gelesen, nie geschrieben.
@@ -51,8 +55,23 @@ konsumiert — sie werden nur gelesen, nie geschrieben.
 Den zuletzt tatsächlich gesendeten Sollwert liest man **nicht** an `number.<prefix>_soll_*` ab
 (die bleiben davon unberührt, siehe [bekannte-luecken.md](bekannte-luecken.md)), sondern an
 `sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` — `assumed_state` wie
-`number.*`, `unavailable` bis zum ersten erfolgreichen Sync, bleibt bei einem Schreibfehler
-bewusst auf dem letzten bekannten Wert stehen (D-010).
+`number.*`, `unavailable` bis zum ersten erfolgreichen Sync und nach einem behandelten
+Schreibfehler (D-013). Steht der Speicher mangels HEMS-Lebenszeichen auf 0 W, zeigen sie `0`.
+
+**HEMS-Lebenszeichen (D-016):** Die Anbindung setzt HEMS-Sollwerte nur um, solange
+`sensor.skytech_hems_status` frisch ist; sonst gehen beide Richtungen auf 0 W, auch im
+Keep-Alive-Takt. Nach dem Start gilt es erst nach einem frisch gesehenen HEMS-Zyklus. Felder und
+Frist: [Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md#hems-lebenszeichen).
+`binary_sensor.<prefix>_hems_lebenszeichen` zeigt den Zustand (an = frisch). Ein bloßer Lesefehler macht diese Sollsensoren nicht unverfügbar.
+
+**Schnittstellen-Sensor (D-017):** `sensor.<prefix>_hems_schnittstelle` bündelt alles, was
+zwischen SkytechHEMS und dieser Integration fließt. State: `bereit`, `laden_gesperrt`,
+`entladen_gesperrt`, `gesperrt` oder `getrennt` (letzter Poll gescheitert). Der Sensor ist immer
+verfügbar. Attribute, Bedeutung und Regeln für das HEMS stehen verbindlich im
+[Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md#schnittstellen-sensor);
+SkytechHEMS liest daraus SoC, Ist-Leistung und die Gerätefreigaben. Die Leistungs- und
+Anforderungswerte sowie `gemessen_am` stehen nicht im Recorder, ihr Verlauf liegt in den
+Einzel-Sensoren.
 
 Ein zusätzlicher Schalter, `switch.<prefix>_hems_steuerung_aktiv`, pausiert/setzt die
 automatischen Schreibvorgänge dieser Anbindung fort (D-011) — Standard nach jedem Neustart ist

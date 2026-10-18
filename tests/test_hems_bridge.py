@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -18,7 +18,7 @@ from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdap
 from custom_components.battery_bridge.const import E3DC_KEEPALIVE_INTERVAL, HEMS_KEEPALIVE_INTERVAL
 from custom_components.battery_bridge.hems_bridge import HemsCommandState
 from custom_components.battery_bridge.models import StorageState
-from tests.conftest import make_e3dc_entry, make_marstek_entry
+from tests.conftest import entity_ids_by_key, hems_zyklus, make_e3dc_entry, make_marstek_entry
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -62,6 +62,11 @@ async def _setup_entry(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
+    if hems_entity_prefix:
+        # Ohne frischen HEMS-Zyklus nach dem Start bleibt der Speicher auf 0 (D-016). Die
+        # Stopp-Befehle des Starts gehören nicht zu dem, was die Tests hier prüfen.
+        await hems_zyklus(hass)
+        calls.clear()
 
     return calls, entry
 
@@ -189,14 +194,16 @@ async def test_nach_fehlgeschlagenem_wechsel_wird_beim_naechsten_sync_erneut_gen
     assert calls == [("charge", 0.0), ("discharge", 801.0)]
 
 
-async def test_last_command_ist_none_vor_erstem_erfolgreichen_sync(
+async def test_last_command_ist_null_vor_erstem_frischen_hems_zyklus(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Leerzustand: vor dem ersten erfolgreichen Sync (HEMS-Helfer fehlen noch) gibt es keinen
-    geratenen Ersatzwert, nur `None` — dieselbe Konvention wie bei `_last_applied_mode`."""
+    """Beim Start fehlt ein frischer HEMS-Zyklus: die Anbindung setzt den Speicher auf 0 (D-016)
+    und meldet genau diesen gesendeten Sollwert — keinen geratenen anderen."""
     _calls, entry = await _setup_entry(hass, monkeypatch)
 
-    assert entry.runtime_data.hems_bridge.last_command is None
+    assert entry.runtime_data.hems_bridge.last_command == HemsCommandState(
+        charge_power_w=0.0, discharge_power_w=0.0
+    )
 
 
 async def test_last_command_spiegelt_ladeleistung_nach_laden_sync(
@@ -487,6 +494,8 @@ async def _setup_e3dc_entry(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    await hems_zyklus(hass)
+    calls.clear()
     return calls
 
 
@@ -530,3 +539,143 @@ async def test_marstek_keepalive_bleibt_bei_sechzig_sekunden(
     await hass.async_block_till_done()
 
     assert calls == []
+
+
+# ---- HEMS-Lebenszeichen (D-016) ----
+
+
+async def _setup_ohne_hems_zyklus(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> tuple[list[tuple[str, float]], object]:
+    """Wie `_setup_entry`, aber ohne simulierten HEMS-Zyklus nach dem Start."""
+    calls: list[tuple[str, float]] = []
+    state = StorageState(
+        soc_percent=50,
+        charge_power_w=0,
+        discharge_power_w=0,
+        available=True,
+        last_update=datetime.now(UTC),
+    )
+    monkeypatch.setattr(MarstekUdpAdapter, "connect", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "read", AsyncMock(return_value=state))
+    monkeypatch.setattr(MarstekUdpAdapter, "close", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=lambda watts: calls.append(("charge", watts))),
+    )
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_discharge_power",
+        AsyncMock(side_effect=lambda watts: calls.append(("discharge", watts))),
+    )
+    entry = make_marstek_entry(hems_entity_prefix=_PREFIX)
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return calls, entry
+
+
+async def test_alter_positiver_sollwert_beim_start_loest_keine_ladung_aus(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Helfer und Lebenszeichen stehen schon vor dem Start (HA-/Provider-Neustart): kein Laden,
+    sondern 0 W, bis ein frischer HEMS-Zyklus gesehen wurde."""
+    hass.states.async_set(_POWER_ENTITY, "800")
+    hass.states.async_set(_MODE_ENTITY, "laden")
+    hass.states.async_set("sensor.skytech_hems_status", "57", {"zyklus_intervall_s": 30})
+
+    calls, entry = await _setup_ohne_hems_zyklus(hass, monkeypatch)
+
+    assert calls == [("charge", 0.0), ("discharge", 0.0)]
+    assert entry.runtime_data.hems_bridge.heartbeat_fresh is False
+
+    calls.clear()
+    await hems_zyklus(hass)
+    assert calls == [("discharge", 0.0), ("charge", 800.0)]
+    assert entry.runtime_data.hems_bridge.heartbeat_fresh is True
+
+
+async def test_ohne_lebenszeichen_wird_helferaenderung_nicht_umgesetzt(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls, _entry = await _setup_ohne_hems_zyklus(hass, monkeypatch)
+    calls.clear()
+
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+
+    assert ("charge", 800.0) not in calls
+    assert set(calls) <= {("charge", 0.0), ("discharge", 0.0)}
+
+
+async def test_ausbleibendes_lebenszeichen_stoppt_den_speicher(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Das HEMS steht, HA läuft: nach Faktor × Zykluszeit geht der Speicher auf 0 W und kommt
+    mit dem nächsten frischen Zyklus von selbst zurück."""
+    import custom_components.battery_bridge.heartbeat as heartbeat_module
+
+    now = [1000.0]
+
+    class _FakeTime:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr(heartbeat_module, "time", _FakeTime)
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    now[0] += 3 * 30 + 1  # Frist: Faktor 3 × 30 s
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5))
+    await hass.async_block_till_done()
+
+    assert calls == [("charge", 0.0), ("discharge", 0.0)]
+    assert entry.runtime_data.hems_bridge.heartbeat_fresh is False
+
+    calls.clear()
+    await hems_zyklus(hass)
+    assert calls == [("discharge", 0.0), ("charge", 800.0)]
+
+
+async def test_pausierte_anbindung_wertet_lebenszeichen_nicht_aus(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import custom_components.battery_bridge.heartbeat as heartbeat_module
+
+    now = [1000.0]
+
+    class _FakeTime:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr(heartbeat_module, "time", _FakeTime)
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await entry.runtime_data.hems_bridge.async_pause()
+    calls.clear()
+
+    now[0] += 1000
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5))
+    await hass.async_block_till_done()
+
+    assert calls == []
+
+
+async def test_binary_sensor_zeigt_lebenszeichen(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _calls, entry = await _setup_ohne_hems_zyklus(hass, monkeypatch)
+    entity_id = entity_ids_by_key(hass, entry)["hems_lebenszeichen"]
+    assert hass.states.get(entity_id).state == "off"
+
+    await hems_zyklus(hass)
+    assert hass.states.get(entity_id).state == "on"
+
+
+async def test_ohne_hems_praefix_kein_lebenszeichen_sensor(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _calls, entry = await _setup_entry(hass, monkeypatch, hems_entity_prefix=None)
+    assert "hems_lebenszeichen" not in entity_ids_by_key(hass, entry)

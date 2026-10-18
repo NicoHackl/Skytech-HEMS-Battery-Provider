@@ -16,6 +16,10 @@ es sich jederzeit nachträglich ändern, ohne das Gerät neu einzurichten; der E
 automatisch neu, die Änderung wirkt ohne HA-Neustart. Bestandsgeräte ohne gesetzten Wert laufen
 mit dem Default (5 s).
 
+Mit HEMS-Anbindung zeigt der Options-Flow zusätzlich `hems_timeout_factor` (D-016): Frist ohne
+HEMS-Lebenszeichen als Vielfaches der HEMS-Zykluszeit, Default 3, erlaubt 2–10, ganzzahlig. Ohne
+Angabe des Intervalls durch das HEMS gilt eine feste Frist von 90 s.
+
 ## Konfigurationsdateien
 
 | Datei | Zweck | Eingecheckt |

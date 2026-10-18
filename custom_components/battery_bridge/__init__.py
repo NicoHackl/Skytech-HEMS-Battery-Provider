@@ -12,6 +12,7 @@ from .adapters.e3dc_rscp import E3dcRscpAdapter
 from .adapters.marstek_udp import MarstekUdpAdapter
 from .const import (
     CONF_HEMS_ENTITY_PREFIX,
+    CONF_HEMS_TIMEOUT_FACTOR,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
     CONF_RSCP_KEY,
@@ -23,9 +24,15 @@ from .const import (
     PROTOCOL_MARSTEK_UDP,
 )
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
+from .heartbeat import DEFAULT_TIMEOUT_FACTOR
 from .hems_bridge import HemsBridge
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER, Platform.SWITCH]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.NUMBER,
+    Platform.SWITCH,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> bool:
@@ -41,7 +48,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry
 
     hems_entity_prefix = entry.data.get(CONF_HEMS_ENTITY_PREFIX)
     if hems_entity_prefix:
-        coordinator.hems_bridge = HemsBridge(coordinator, hems_entity_prefix)
+        coordinator.hems_bridge = HemsBridge(
+            coordinator,
+            hems_entity_prefix,
+            entry.options.get(CONF_HEMS_TIMEOUT_FACTOR, DEFAULT_TIMEOUT_FACTOR),
+        )
         await coordinator.hems_bridge.async_setup()
 
     entry.runtime_data = coordinator

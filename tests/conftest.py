@@ -91,3 +91,18 @@ def entity_ids_by_key(hass: HomeAssistant, entry: MockConfigEntry) -> dict[str, 
         entry_.unique_id.removeprefix(prefix): entry_.entity_id
         for entry_ in er.async_entries_for_config_entry(registry, entry.entry_id)
     }
+
+
+_hems_counter = 0
+
+
+async def hems_zyklus(hass: HomeAssistant, interval_s: float = 30) -> None:
+    """Einen SkytechHEMS-Zyklus simulieren: das Lebenszeichen ändert seinen Zähler (D-016)."""
+    global _hems_counter
+    _hems_counter += 1
+    hass.states.async_set(
+        "sensor.skytech_hems_status",
+        str(_hems_counter),
+        {"zyklus_zaehler": _hems_counter, "zyklus_intervall_s": interval_s},
+    )
+    await hass.async_block_till_done()

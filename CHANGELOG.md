@@ -11,6 +11,51 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+## [0.5.0] — 18.10.2026
+
+### Hinzugefügt — 18.10.2026
+
+- **Neuer Sensor „HEMS-Schnittstelle"** (nur mit SkytechHEMS-Anbindung). Er zeigt auf einen Blick,
+  ob der Speicher bereit ist, ob das Gerät Laden oder Entladen gerade selbst sperrt oder ob die
+  Verbindung fehlt. In seinen Attributen steht alles, was zwischen SkytechHEMS und Speicher
+  ausgetauscht wird: Ladezustand, Ist-Leistungen, Freigaben, die Anforderung des HEMS und der
+  zuletzt gesendete Sollwert. SkytechHEMS kann den Speicher künftig über diesen einen Sensor
+  einbinden und erfährt so, wenn das Gerät eine Richtung sperrt.
+- Die Integration liest die Lade- und Entladefreigabe direkt am Gerät: beim Marstek die
+  Freigaben des Akkus, beim E3DC Lade-/Entladesperre, Sperrzeiten und Notstromreserve.
+  Abgefragt wird höchstens alle 15 Sekunden.
+
+### Dokumentation — 12.10.2026
+
+- Stand des E3DC-Adapters nachgetragen: An der Referenzanlage ist der E3DC als Speicher
+  eingerichtet und wird von SkytechHEMS gesteuert (dort D-063). Die Abnahmepunkte des Adapters
+  bleiben offen, bis sie bestätigt sind. Hinweis ergänzt, dass die Automation „E3DC Manuelle
+  Leistung“ noch eingeschaltet ist.
+
+### Hinzugefügt — 07.10.2026
+
+- **Speicher stoppt, wenn SkytechHEMS ausfällt.** Mit SkytechHEMS-Anbindung setzt die Integration
+  dessen Sollwerte nur noch um, solange das HEMS regelmäßig ein Lebenszeichen schickt. Bleibt es
+  länger als das Dreifache der HEMS-Zykluszeit aus, geht der Speicher auf 0 W und übernimmt beim
+  nächsten HEMS-Zyklus wieder von selbst. Die Frist lässt sich in den Einstellungen des Geräts
+  ändern (Faktor 2–10).
+- **Neuer Sensor „HEMS-Lebenszeichen"** zeigt, ob das HEMS gerade steuert.
+
+### Geändert — 07.10.2026
+
+- Nach einem Neustart von Home Assistant oder der Integration bleibt der Speicher auf 0 W, bis das
+  HEMS einen neuen Zyklus gerechnet hat — ein alter Sollwert startet keine Ladung mehr.
+
+### Dokumentation — 06.10.2026
+
+- Gemeinsame Contract-Ablage mit einem Ordner je Projektpaar und aktualisierten Verweisen.
+- Aktueller Austausch mit HEMS einschließlich bestehender Kompatibilitäts- und Betriebsgrenzen dokumentiert.
+- Vertrag Version 1.1: Das HEMS-Lebenszeichen `sensor.skytech_hems_status` ist als Entwurf beschrieben
+  (Speicher stoppt bei ausbleibendem Lebenszeichen). Es ist noch nicht umgesetzt; Umsetzungsreihenfolge:
+  `umsetzungsplan.md` im Repo Skytech-HEMS-Wallbox-Provider.
+- Regel zur Pflege projektübergreifender Verträge in `AGENTS.md` verankert, damit KI-Assistenten sie automatisch beachten.
+
+
 ### Hinzugefügt
 
 - E3DC-Hauskraftwerke als zweiter Speicher: Beim Einrichten lässt sich jetzt „E3DC" als Hersteller

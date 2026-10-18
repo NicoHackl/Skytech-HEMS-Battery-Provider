@@ -28,6 +28,7 @@ from .adapters.marstek_udp import MarstekUdpAdapter
 from .const import (
     CONF_DISPLAY_NAME,
     CONF_HEMS_ENTITY_PREFIX,
+    CONF_HEMS_TIMEOUT_FACTOR,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
     CONF_RSCP_KEY,
@@ -44,6 +45,7 @@ from .const import (
     PROTOCOL_E3DC_RSCP,
     PROTOCOL_MARSTEK_UDP,
 )
+from .heartbeat import DEFAULT_TIMEOUT_FACTOR, MAX_TIMEOUT_FACTOR, MIN_TIMEOUT_FACTOR
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -235,30 +237,39 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class BatteryBridgeOptionsFlowHandler(OptionsFlow):
-    """Options-Flow: einziges Feld, das Abfrageintervall in Sekunden."""
+    """Options-Flow: Abfrageintervall, mit HEMS-Anbindung zusätzlich der Frist-Faktor (D-016)."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Einzelner Schritt: Abfrageintervall anzeigen/ändern."""
+        """Einzelner Schritt: Abfrageintervall und ggf. Frist-Faktor anzeigen/ändern."""
         errors: dict[str, str] = {}
+        has_hems = bool(self.config_entry.data.get(CONF_HEMS_ENTITY_PREFIX))
 
         if user_input is not None:
             update_interval = _validate_update_interval(user_input, errors)
+            data: dict[str, Any] = {CONF_UPDATE_INTERVAL: update_interval}
+            if has_hems:
+                factor = user_input.get(CONF_HEMS_TIMEOUT_FACTOR, DEFAULT_TIMEOUT_FACTOR)
+                if not (MIN_TIMEOUT_FACTOR <= factor <= MAX_TIMEOUT_FACTOR):
+                    errors[CONF_HEMS_TIMEOUT_FACTOR] = "invalid_hems_timeout_factor"
+                data[CONF_HEMS_TIMEOUT_FACTOR] = factor
             if not errors:
-                return self.async_create_entry(
-                    title="", data={CONF_UPDATE_INTERVAL: update_interval}
-                )
+                return self.async_create_entry(title="", data=data)
 
         current_interval = self.config_entry.options.get(
             CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_SECONDS
         )
+        schema: dict[Any, Any] = {
+            vol.Optional(CONF_UPDATE_INTERVAL, default=current_interval): int,
+        }
+        if has_hems:
+            current_factor = self.config_entry.options.get(
+                CONF_HEMS_TIMEOUT_FACTOR, DEFAULT_TIMEOUT_FACTOR
+            )
+            schema[vol.Optional(CONF_HEMS_TIMEOUT_FACTOR, default=current_factor)] = int
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_UPDATE_INTERVAL, default=current_interval): int,
-                }
-            ),
+            data_schema=vol.Schema(schema),
             errors=errors,
         )

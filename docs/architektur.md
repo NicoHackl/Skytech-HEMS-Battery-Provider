@@ -58,6 +58,8 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (aktue
 | `sensor.py` | `StorageState`-Felder als HA-Entities abbilden; bei aktiver HEMS-Anbindung zusätzlich `HemsBridge.last_command` (siehe unten) | Eigene Poll- oder Verbindungslogik — das ist Aufgabe des Coordinators/Adapters |
 | `number.py` | Soll-Werte entgegennehmen, Schreibaufrufe an den Adapter durchreichen, Fehler als HA-Fehler melden | Eigene Poll- oder Verbindungslogik |
 | `hems_bridge.py` (optional, nur mit HEMS-Präfix) | HEMS' Anforderungshelfer (`input_number`/`input_select`) beobachten, bei Änderung 1:1 in Adapter-Schreibaufrufe übersetzen (D-009) | Eigene Regel- oder Verteilungslogik — nur Übersetzung; andere Entities als die eigenen HEMS-Helfer lesen |
+| `heartbeat.py` | Regeln des HEMS-Lebenszeichens (D-016): Ausgangslage, Änderung, Frist — ohne HA-Import | Auf HA zugreifen, Gerätebefehle senden |
+| `binary_sensor.py` (optional, nur mit HEMS-Präfix) | Zeigt, ob das HEMS-Lebenszeichen frisch ist (D-016) | Selbst etwas schalten |
 | `switch.py` (optional, nur mit HEMS-Präfix) | Ein Schalter je Speicher: pausiert/setzt die automatischen Schreibvorgänge von `hems_bridge.py` fort (D-011) | Eigene Poll- oder Verbindungslogik; einen Geräte-Sollwert selbst ändern |
 
 Regel: Keine Komponente übernimmt Aufgaben einer anderen. Verschiebt sich eine Verantwortung,
@@ -127,13 +129,21 @@ Bei jedem erfolgreichen Sync merkt sich `hems_bridge.py` den gesendeten Wert als
 `HemsCommandState` (`last_command`, siehe [datenmodell.md](datenmodell.md)) — `sensor.py` liest
 das für zwei zusätzliche, nur bei HEMS-Präfix angelegte Sensoren aus (D-010): anders als die
 übrigen Sensoren kommt dieser Wert nicht aus dem gepollten `StorageState`, sondern direkt aus der
-HEMS-Anbindung, und bleibt bei einem Schreibfehler bewusst auf dem letzten bekannten Stand stehen
-statt auf „nicht verfügbar" zu springen.
+HEMS-Anbindung. Der intern gespeicherte letzte Erfolg bleibt erhalten, die Sensoren werden bei
+behandelten Schreibfehlern aber über `write_ok` nicht verfügbar (D-013).
 
 Ein optionaler Schalter (`switch.<prefix>_hems_steuerung_aktiv`, D-011) pausiert/setzt diesen
 Schreibpfad fort, ohne den HEMS-Vertrag selbst oder D-009 zu ändern — ausgeschaltet lässt sich
 `number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung` von Hand bedienen, ohne dass der
 nächste HEMS-Sync das sofort überschreibt. Steht nach jedem Neustart/Neuladen wieder auf EIN.
+
+**Gerätestatus und Schnittstellen-Sensor (D-017):** Im selben `read()` lesen die Adapter den
+Gerätestatus mit — Marstek `Bat.GetStatus`, E3DC `EMS_REQ_STATUS` und `get_system_status()` —,
+aber höchstens alle `STATUS_POLL_INTERVAL` (15 s); dazwischen gilt der zwischengespeicherte Wert.
+Ein Fehlschlag dieser Zusatzabfrage lässt die Freigaben `None` und den Poll gültig. `sensor.py`
+fasst `StorageState`, `HemsBridge.request`, `last_command`, `write_ok`, Lebenszeichen und Pause
+im Sensor `hems_schnittstelle` zusammen. Die Anbindung stößt dessen Aktualisierung zusätzlich bei
+jeder Helferänderung an, auch in der Pause.
 
 Details zur öffentlichen Schnittstelle (Entities, Adapter-Vertrag): [api-referenz.md](api-referenz.md).
 
@@ -156,6 +166,8 @@ custom_components/battery_bridge/
 │                                     #   optional: HEMS-Soll-Lade-/Entladeleistung-W (D-010)
 ├── number.py                         # Soll-Ladeleistung-W, Soll-Entladeleistung-W
 ├── hems_bridge.py                     # optional: HEMS-Anforderungshelfer → Adapter (D-009)
+├── heartbeat.py                       # Regeln des HEMS-Lebenszeichens (D-016)
+├── binary_sensor.py                   # optional: HEMS-Lebenszeichen (D-016)
 ├── switch.py                           # optional: HEMS-Steuerung pausieren/fortsetzen (D-011)
 └── strings.json / translations/de.json   # Config-Flow- und Entity-Texte (identisch, siehe unten)
 

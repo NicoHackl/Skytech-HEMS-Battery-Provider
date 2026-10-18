@@ -1,5 +1,10 @@
 # Bekannte Lücken und Stolpersteine
 
+## Gemeinsamer Contract-Stand — 06.10.2026
+
+Die zwei HEMS-Ausgabehelfer sind nicht atomar, ihre Vorzeichenkonsistenz wird nicht geprüft. Ein HEMS-Ausfall wird über das Lebenszeichen erkannt (D-016); eine pausierte Bridge wertet es nicht aus und löst keinen eigenen Stopp aus.
+Details und geprüfte Codebasis: [gemeinsamer Vertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md).
+
 **Vor jeder Annahme lesen.** Diese Datei existiert, weil Doku und Code auseinanderlaufen. Steht
 etwas in [architektur.md](architektur.md), heißt das nicht, dass es implementiert ist — hier steht,
 wo nicht.
@@ -320,12 +325,33 @@ Schreibaufrufe, die sie auslöst, laufen über denselben unverifizierten Marstek
 
 ## E3DC — vor dem produktiven Einsatz zu bestätigen (D-015)
 
+Stand 12.10.2026: Der E3DC läuft an der Referenzanlage bereits unter HEMS-Steuerung (SkytechHEMS
+D-063). Die Punkte unten sind damit nicht automatisch bestätigt. Bestätigungen werden hier mit
+Datum eingetragen. Zum Parallelbetrieb: `automation.e3dc_manuelle_leistung` war am 12.10.2026 noch
+eingeschaltet, `automation.pye3dc_max_ladeleistung_speicher_setzen` ausgeschaltet.
+
 | Frage | Betrifft | Blockiert |
 |---|---|---|
 | Vorzeichen von `consumption.battery` aus `E3DC.poll()` (laut pye3dc-Doku positiv = laden) — gegen `sensor.e3dc_leistung_batterie_modbus` abgleichen | `adapters/e3dc_rscp.py: read()` | Verlässliche Ist-Lade-/Entladeleistung |
 | Hält E3DC den Sollwert bei 5-s-Takt dauerhaft, ohne zwischendurch selbst zu regeln? Die Rückfallzeit (~10 s) stammt aus Beobachtung, nicht aus Herstellerdoku; die pyscript-Beschreibung nannte 30 s | `const.py: E3DC_KEEPALIVE_INTERVAL` | Aktivierung der HEMS-Anbindung für E3DC |
 | **Manuelle Sollwerte halten nur ~10 s.** `number.<prefix>_soll_*` schreibt einmalig, ohne Keep-Alive — bei E3DC übernimmt das Gerät danach selbst. Für Dauerbetrieb HEMS-Anbindung nutzen | `number.py` | Kein Bug, aber überraschend |
 | **Parallelbetrieb mit dem pyscript.** Laufen die pyscript-Automationen „E3DC Manuelle Leistung" oder „pyE3DC Max Ladeleistung Speicher setzen" weiter, schreiben zwei Stellen auf dasselbe Gerät; SmartPower-Limits (`set_power_limits`) können den Sollwert zusätzlich begrenzen | Home-Assistant-Konfiguration des Users | Eindeutige Steuerung |
+
+## Gerätefreigaben — an Hardware zu bestätigen (D-017)
+
+Anlass: Am 18.10.2026 von 09:01 bis 09:16 hat der Marstek (`acspeicher1`) eine vom HEMS
+angeforderte und von der Integration erfolgreich gesendete Entladung (bis 2320 W) nicht
+ausgeführt; die Shelly-Messung zeigte rund 8 W Leerlauf, Laden funktionierte im selben Zeitraum.
+In den drei Tagen davor trat das nur bei 12–15 % SoC auf, nachdem der Speicher vom Boden aus
+wieder geladen hatte; ab 17 % entlud er wieder. Vermutet wird eine geräteinterne Entladesperre
+mit Wiedereinschalt-Hysterese. Seit D-017 liest die Integration deshalb die Gerätefreigaben mit.
+
+| Frage | Betrifft | Blockiert |
+|---|---|---|
+| Geht `Bat.GetStatus.dischrg_flag` im Band 12–16 % nach einem Wiederaufladen tatsächlich auf `false`? Bleibt es `true`, obwohl der Speicher nicht entlädt, erklärt das Flag den Vorfall nicht | `adapters/marstek_udp.py: _read_device_status()` | Auswertung der Freigabe im HEMS (`provider_entity`) |
+| Liefert das Gerät die Flags als JSON-Boolean? Andere Typen werden bewusst nicht gedeutet (Freigabe bleibt `None`); die Rohantwort steht im Debug-Log | `adapters/marstek_udp.py: _as_bool()` | – |
+| Entspricht die RSCP-Belegung von `EMS_STATUS` der Modbus-Doku (Bit 0/1 Laden/Entladen gesperrt, Bit 5/6 Sperrzeiten)? Abgleich: Attribut `geraet_status_roh` gegen `sensor.e3dc_ems_status_modbus` (am 18.10.2026 dort 132) | `adapters/e3dc_rscp.py: _read_device_status()` | Auswertung der Freigabe im HEMS für E3DC |
+| Setzt ein HEMS-Leerlaufbefehl (Betriebsart 1) beim E3DC selbst eine Sperre? In 7 Tagen Modbus-Verlauf kamen Bit 0/1 nie vor, eine Selbstblockade ist also nicht zu erwarten | E3DC-Verhalten | – |
 
 ## Bewusst nicht umgesetzt
 

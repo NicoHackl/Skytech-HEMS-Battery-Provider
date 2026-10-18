@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
 from custom_components.battery_bridge.models import StorageState
-from tests.conftest import entity_ids_by_key, make_marstek_entry
+from tests.conftest import entity_ids_by_key, hems_zyklus, make_marstek_entry
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -55,6 +55,8 @@ async def _setup_entry(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    if hems_entity_prefix:
+        await hems_zyklus(hass)  # frischer HEMS-Zyklus nach dem Start (D-016)
     assert entry.state is ConfigEntryState.LOADED
 
     return calls, entity_ids_by_key(hass, entry)

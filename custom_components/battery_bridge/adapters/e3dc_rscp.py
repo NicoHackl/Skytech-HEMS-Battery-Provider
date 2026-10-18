@@ -21,19 +21,37 @@ ein Lock serialisiert Coordinator-Poll und HEMS-Schreibvorgänge auf derselben R
 Verbindungsabbrüche heilt pye3dc selbst: nach einem Fehler trennt die Bibliothek die Sitzung und
 baut sie beim nächsten Aufruf neu auf (inklusive Anmeldung). Ein eigener Neuaufbau wie bei Marstek
 (D-013) ist hier nicht nötig.
+
+Gerätestatus (D-017): `EMS_REQ_STATUS` liefert das EMS-Statusbitfeld, dasselbe wie das
+Modbus-Register „EMS-Status" (an der Referenzanlage `sensor.e3dc_ems_status_modbus`). Belegung laut
+E3DC-Modbus-Dokumentation, für RSCP **noch an Hardware gegenzuprüfen** (docs/bekannte-luecken.md):
+Bit 0 Laden gesperrt, Bit 1 Entladen gesperrt, Bit 5 Ladesperrzeit aktiv, Bit 6 Entladesperrzeit
+aktiv. Dazu `get_system_status()` von pye3dc für „Notstromreserve erreicht" — dann gibt das Gerät
+keine Entladeleistung mehr ab. Beides wird höchstens alle `STATUS_POLL_INTERVAL` gelesen; scheitert
+es, bleiben die Freigaben `None`, der Messwert-Poll läuft weiter.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 from e3dc import E3DC, AuthenticationError, RSCPKeyError
 
-from ..const import E3DC_KEEPALIVE_INTERVAL
+from ..const import (
+    E3DC_KEEPALIVE_INTERVAL,
+    LOCK_CHARGE_DEVICE,
+    LOCK_CHARGE_TIME,
+    LOCK_DISCHARGE_DEVICE,
+    LOCK_DISCHARGE_TIME,
+    LOCK_EMERGENCY_RESERVE,
+    STATUS_POLL_INTERVAL,
+)
 from ..models import StorageState
 from .base import StorageAdapterAuthError, StorageAdapterError
 
@@ -45,6 +63,21 @@ _T = TypeVar("_T")
 _MODE_IDLE = 1
 _MODE_DISCHARGE = 2
 _MODE_GRID_CHARGE = 4
+
+# Bits des EMS-Statusbitfelds (siehe Moduldoc) und der jeweilige Sperrgrund.
+_STATUS_CHARGE_LOCKS = ((0, LOCK_CHARGE_DEVICE), (5, LOCK_CHARGE_TIME))
+_STATUS_DISCHARGE_LOCKS = ((1, LOCK_DISCHARGE_DEVICE), (6, LOCK_DISCHARGE_TIME))
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _DeviceStatus:
+    """Zwischengespeicherter Gerätestatus — `None` heißt „nicht gelesen"."""
+
+    charge_allowed: bool | None = None
+    discharge_allowed: bool | None = None
+    raw_status: int | None = None
+    lock_reasons: tuple[str, ...] = field(default_factory=tuple)
+
 
 # Ersatz-Obergrenze, falls das Gerät seine maximale Lade-/Entladeleistung nicht meldet. Liegt über
 # den größten Hauskraftwerken (S10X), damit nichts Gültiges abgeschnitten wird — die tatsächliche
@@ -67,6 +100,9 @@ class E3dcRscpAdapter:
         # Serialisiert alle Aufrufe auf die eine RSCP-Sitzung — pye3dc ist nicht threadsicher,
         # Coordinator-Poll und HEMS-Anbindung laufen aber als getrennte Tasks.
         self._call_lock = asyncio.Lock()
+        # Gerätestatus und Zeitpunkt der letzten Abfrage (monotone Uhr), siehe Moduldoc.
+        self._device_status = _DeviceStatus()
+        self._device_status_at: float | None = None
 
     @property
     def serial_number(self) -> str | None:
@@ -117,13 +153,57 @@ class E3dcRscpAdapter:
         result = await self._run(lambda: client.poll(keepAlive=True), "Abfrage")
         consumption = result.get("consumption") or {}
         charge_power_w, discharge_power_w = _split_battery_power(consumption.get("battery"))
+        device_status = await self._read_device_status(client)
         return StorageState(
             soc_percent=_as_float(result.get("stateOfCharge")),
             charge_power_w=charge_power_w,
             discharge_power_w=discharge_power_w,
             available=True,
             last_update=datetime.now(UTC),
+            charge_allowed=device_status.charge_allowed,
+            discharge_allowed=device_status.discharge_allowed,
+            lock_reasons=device_status.lock_reasons,
+            raw_status=device_status.raw_status,
         )
+
+    async def _read_device_status(self, client: E3DC) -> _DeviceStatus:
+        """EMS-Status und Notstromreserve höchstens alle `STATUS_POLL_INTERVAL` lesen."""
+        now = time.monotonic()
+        if (
+            self._device_status_at is not None
+            and now - self._device_status_at < STATUS_POLL_INTERVAL.total_seconds()
+        ):
+            return self._device_status
+        self._device_status_at = now
+        try:
+            raw = await self._run(
+                lambda: client.sendRequestTag("EMS_REQ_STATUS", keepAlive=True), "Statusabfrage"
+            )
+            system = await self._run(
+                lambda: client.get_system_status(keepAlive=True), "Systemstatus"
+            )
+        except StorageAdapterError as exc:
+            # Keine Freigabe-Information ist kein Grund, die Messwerte zu verwerfen (Vertrag 1.2).
+            _LOGGER.debug("Gerätestatus von E3DC %s nicht lesbar: %s", self._host, exc)
+            self._device_status = _DeviceStatus()
+            return self._device_status
+
+        _LOGGER.debug("E3DC %s: EMS-Status %r, Systemstatus %r", self._host, raw, system)
+        status = _as_int(raw)
+        if status is None:
+            self._device_status = _DeviceStatus()
+            return self._device_status
+        charge_locks = [reason for bit, reason in _STATUS_CHARGE_LOCKS if status >> bit & 1]
+        discharge_locks = [reason for bit, reason in _STATUS_DISCHARGE_LOCKS if status >> bit & 1]
+        if isinstance(system, dict) and system.get("emergencyReserveReached") is True:
+            discharge_locks.append(LOCK_EMERGENCY_RESERVE)
+        self._device_status = _DeviceStatus(
+            charge_allowed=not charge_locks,
+            discharge_allowed=not discharge_locks,
+            raw_status=status,
+            lock_reasons=tuple(charge_locks + discharge_locks),
+        )
+        return self._device_status
 
     async def write_charge_power(self, watts: float) -> None:
         """Ladeleistung setzen — > 0 Netzladen, 0 Leerlauf (siehe Moduldoc)."""
@@ -189,6 +269,13 @@ def _as_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _as_int(value: Any) -> int | None:
+    """Ganzzahliges Statusbitfeld übernehmen, sonst `None` — kein Wert wird geraten."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 def _split_battery_power(raw: Any) -> tuple[float | None, float | None]:

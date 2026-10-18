@@ -91,3 +91,33 @@ async def test_options_flow_lehnt_wert_ausserhalb_bereich_ab(
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {CONF_UPDATE_INTERVAL: "invalid_update_interval"}
     assert entry.options == {CONF_UPDATE_INTERVAL: DEFAULT_UPDATE_INTERVAL_SECONDS}
+
+
+async def test_options_flow_frist_faktor_nur_mit_hems_anbindung(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mit HEMS-Präfix zeigt der Options-Flow den Frist-Faktor des Lebenszeichens (D-016)."""
+    from custom_components.battery_bridge.const import CONF_HEMS_TIMEOUT_FACTOR
+
+    _mock_adapter(monkeypatch)
+    monkeypatch.setattr(MarstekUdpAdapter, "write_charge_power", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "write_discharge_power", AsyncMock(return_value=None))
+    entry = make_marstek_entry(hems_entity_prefix="acspeicher1")
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["data_schema"]({})[CONF_HEMS_TIMEOUT_FACTOR] == 3
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_UPDATE_INTERVAL: 5, CONF_HEMS_TIMEOUT_FACTOR: 11}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_HEMS_TIMEOUT_FACTOR: "invalid_hems_timeout_factor"}
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_UPDATE_INTERVAL: 5, CONF_HEMS_TIMEOUT_FACTOR: 4}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_HEMS_TIMEOUT_FACTOR] == 4
