@@ -11,6 +11,8 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+## [0.5.0] — 18.10.2026
+
 ### Hinzugefügt — 18.10.2026
 
 - **Neuer Sensor „HEMS-Schnittstelle"** (nur mit SkytechHEMS-Anbindung). Er zeigt auf einen Blick,
