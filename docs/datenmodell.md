@@ -30,17 +30,18 @@ derselbe Entry bestehen, es entsteht kein doppelter.
 | `last_update` | `datetime` | ja | Zeitstempel der letzten gültigen Antwort |
 | `charge_allowed` | `bool \| None` | nein | Ladefreigabe des Geräts (D-017); `None` = Gerät liefert keine Angabe |
 | `discharge_allowed` | `bool \| None` | nein | Entladefreigabe des Geräts (D-017); `None` = Gerät liefert keine Angabe |
-| `lock_reasons` | `tuple[str, ...]` | nein | Stabile Sperrgründe: `geraet_laden_gesperrt`, `geraet_entladen_gesperrt`, `ladesperrzeit`, `entladesperrzeit`, `notstromreserve` |
+| `lock_reasons` | `tuple[str, ...]` | nein | Stabile Sperrgründe: `geraet_laden_gesperrt`, `geraet_entladen_gesperrt`, `ladesperrzeit`, `entladesperrzeit`, `notstromreserve`, `keine_reaktion_laden`, `keine_reaktion_entladen` |
 | `temperature_c` | `float \| None` | nein | Batterietemperatur in °C (Marstek `bat_temp`) |
 | `rated_capacity_wh` | `float \| None` | nein | Nennkapazität in Wh (Marstek `rated_capacity`) |
 | `raw_status` | `int \| None` | nein | Rohes Statusbitfeld des Geräts (E3DC `EMS_STATUS`), nur Diagnose |
+| `lock_release_soc_percent` | `float \| None` | nein | Ladezustand, ab dem eine vom Soll/Ist-Vergleich erkannte Sperre fällt (D-018) |
 
 Herkunft der Gerätestatus-Felder je Adapter (höchstens alle `STATUS_POLL_INTERVAL` = 15 s gelesen):
 
 | Feld | Marstek (`Bat.GetStatus`) | E3DC (RSCP) |
 |---|---|---|
-| `charge_allowed` | `charg_flag` | nicht Bit 0 (Laden gesperrt) und nicht Bit 5 (Ladesperrzeit) von `EMS_STATUS` |
-| `discharge_allowed` | `dischrg_flag` | nicht Bit 1 (Entladen gesperrt), nicht Bit 6 (Entladesperrzeit), nicht `emergencyReserveReached` aus `get_system_status()` |
+| `charge_allowed` | `charg_flag` und kein Soll/Ist-Befund `keine_reaktion_laden` (D-018) | nicht Bit 0 (Laden gesperrt) und nicht Bit 5 (Ladesperrzeit) von `EMS_STATUS` |
+| `discharge_allowed` | `dischrg_flag` und kein Soll/Ist-Befund `keine_reaktion_entladen` (D-018) | nicht Bit 1 (Entladen gesperrt), nicht Bit 6 (Entladesperrzeit), nicht `emergencyReserveReached` aus `get_system_status()` |
 
 Bedeutung im unteren SoC-Band (Marstek) und Bitbelegung (E3DC) sind an Hardware zu bestätigen,
 siehe [bekannte-luecken.md](bekannte-luecken.md#gerätefreigaben--an-hardware-zu-bestätigen-d-017).

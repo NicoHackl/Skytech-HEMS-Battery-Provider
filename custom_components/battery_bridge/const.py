@@ -86,3 +86,30 @@ LOCK_DISCHARGE_DEVICE: Final = "geraet_entladen_gesperrt"
 LOCK_CHARGE_TIME: Final = "ladesperrzeit"
 LOCK_DISCHARGE_TIME: Final = "entladesperrzeit"
 LOCK_EMERGENCY_RESERVE: Final = "notstromreserve"
+
+# Soll/Ist-Vergleich für den Marstek (D-018): der Marstek meldet eine eigene Entladesperre nicht
+# über `dischrg_flag` (Befund 19.10.2026). Die Integration erkennt deshalb selbst, wenn das Gerät
+# einen bestätigten Sollwert nicht ausführt, und sperrt die Richtung. Je Speicher im Options-Flow
+# einstellbar, wie das Abfrageintervall (`entry.options`).
+CONF_RESPONSE_CHECK_TIME: Final = "response_check_time_seconds"
+CONF_RESPONSE_CHECK_MIN_REQUEST: Final = "response_check_min_request_w"
+CONF_RESPONSE_CHECK_MAX_ACTUAL: Final = "response_check_max_actual_w"
+# Aufsummierte Zeit ohne Reaktion, ab der gesperrt wird. 0 schaltet den Vergleich ab.
+DEFAULT_RESPONSE_CHECK_TIME_SECONDS: Final = 30
+MAX_RESPONSE_CHECK_TIME_SECONDS: Final = 600
+MIN_RESPONSE_CHECK_TIME_SECONDS: Final = 10  # außer 0 = aus
+# Erst ab diesem gesendeten Sollwert wird geprüft — kleine Werte setzt das Gerät oft nicht um.
+DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W: Final = 100
+MIN_RESPONSE_CHECK_MIN_REQUEST_W: Final = 20
+MAX_RESPONSE_CHECK_MIN_REQUEST_W: Final = 5000
+# Liegt die Ist-Leistung der angeforderten Richtung darunter, gilt das als „keine Reaktion".
+# Eine Verweigerung zeigt an der Referenzanlage exakt 0 W.
+DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W: Final = 20
+MIN_RESPONSE_CHECK_MAX_ACTUAL_W: Final = 1
+MAX_RESPONSE_CHECK_MAX_ACTUAL_W: Final = 1000
+# Um so viele Prozentpunkte muss sich der SoC seit der Sperre bewegen (Entladen: steigen, Laden:
+# fallen), bevor die Richtung wieder freigegeben und die nächste Anforderung neu geprüft wird.
+# Vom User festgelegt (19.10.2026), bewusst kein Parameter.
+RESPONSE_CHECK_RELEASE_SOC_PERCENT: Final = 1.0
+LOCK_CHARGE_NO_RESPONSE: Final = "keine_reaktion_laden"
+LOCK_DISCHARGE_NO_RESPONSE: Final = "keine_reaktion_entladen"

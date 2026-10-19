@@ -11,11 +11,21 @@ from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
 from custom_components.battery_bridge.const import (
+    CONF_RESPONSE_CHECK_MAX_ACTUAL,
+    CONF_RESPONSE_CHECK_MIN_REQUEST,
+    CONF_RESPONSE_CHECK_TIME,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL_SECONDS,
 )
 from custom_components.battery_bridge.models import StorageState
-from tests.conftest import make_marstek_entry
+from tests.conftest import make_e3dc_entry, make_marstek_entry
+
+# Defaults des Soll/Ist-Vergleichs, den der Options-Flow beim Marstek mitführt (D-018).
+_RESPONSE_DEFAULTS = {
+    CONF_RESPONSE_CHECK_TIME: 30,
+    CONF_RESPONSE_CHECK_MIN_REQUEST: 100,
+    CONF_RESPONSE_CHECK_MAX_ACTUAL: 20,
+}
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
@@ -47,7 +57,7 @@ async def test_options_flow_zeigt_aktuellen_wert_als_default(
 
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "init"
-    assert result["data_schema"]({}) == {CONF_UPDATE_INTERVAL: 15}
+    assert result["data_schema"]({}) == {CONF_UPDATE_INTERVAL: 15, **_RESPONSE_DEFAULTS}
 
 
 async def test_options_flow_aendert_intervall_und_laedt_entry_sofort_neu(
@@ -69,7 +79,7 @@ async def test_options_flow_aendert_intervall_und_laedt_entry_sofort_neu(
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {CONF_UPDATE_INTERVAL: 2}
+    assert entry.options == {CONF_UPDATE_INTERVAL: 2, **_RESPONSE_DEFAULTS}
     assert entry.runtime_data.update_interval == timedelta(seconds=2)
 
 
@@ -121,3 +131,97 @@ async def test_options_flow_frist_faktor_nur_mit_hems_anbindung(
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_HEMS_TIMEOUT_FACTOR] == 4
+
+
+async def test_soll_ist_felder_nur_beim_marstek(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-018: der Vergleich ist vorerst nur für den Marstek vorgesehen."""
+    from custom_components.battery_bridge.adapters.e3dc_rscp import E3dcRscpAdapter
+
+    state = StorageState(
+        soc_percent=50, charge_power_w=0, discharge_power_w=0, available=True,
+        last_update=datetime.now(UTC),
+    )
+    monkeypatch.setattr(E3dcRscpAdapter, "connect", AsyncMock(return_value=None))
+    monkeypatch.setattr(E3dcRscpAdapter, "read", AsyncMock(return_value=state))
+    monkeypatch.setattr(E3dcRscpAdapter, "close", AsyncMock(return_value=None))
+    entry = make_e3dc_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["data_schema"]({}) == {CONF_UPDATE_INTERVAL: DEFAULT_UPDATE_INTERVAL_SECONDS}
+
+
+async def test_soll_ist_werte_landen_im_adapter(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_adapter(monkeypatch)
+    entry = make_marstek_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    await hass.config_entries.options.async_configure(
+        flow["flow_id"],
+        {CONF_UPDATE_INTERVAL: 5, CONF_RESPONSE_CHECK_TIME: 45,
+         CONF_RESPONSE_CHECK_MIN_REQUEST: 200, CONF_RESPONSE_CHECK_MAX_ACTUAL: 30},
+    )
+    await hass.async_block_till_done()
+
+    check = entry.runtime_data.adapter._response_check
+    assert (check.time_s, check.min_request_w, check.max_actual_w) == (45, 200, 30)
+    assert check.max_step_s == 10
+
+
+async def test_soll_ist_erkennungszeit_null_schaltet_ab(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_adapter(monkeypatch)
+    entry = make_marstek_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        flow["flow_id"], {CONF_UPDATE_INTERVAL: 5, CONF_RESPONSE_CHECK_TIME: 0}
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_RESPONSE_CHECK_TIME] == 0
+
+
+@pytest.mark.parametrize(
+    ("user_input", "field", "error"),
+    [
+        ({CONF_RESPONSE_CHECK_TIME: 5}, CONF_RESPONSE_CHECK_TIME,
+         "invalid_response_check_time_seconds"),
+        ({CONF_RESPONSE_CHECK_MIN_REQUEST: 10}, CONF_RESPONSE_CHECK_MIN_REQUEST,
+         "invalid_response_check_min_request_w"),
+        ({CONF_RESPONSE_CHECK_MIN_REQUEST: 100, CONF_RESPONSE_CHECK_MAX_ACTUAL: 100},
+         CONF_RESPONSE_CHECK_MAX_ACTUAL, "response_check_actual_above_request"),
+    ],
+)
+async def test_soll_ist_werte_werden_geprueft(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch,
+    user_input: dict, field: str, error: str,
+) -> None:
+    _mock_adapter(monkeypatch)
+    entry = make_marstek_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        flow["flow_id"], {CONF_UPDATE_INTERVAL: 5, **user_input}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {field: error}
+

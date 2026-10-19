@@ -281,3 +281,25 @@ async def test_schnittstellen_sensor_zeichnet_fluechtige_attribute_nicht_auf() -
     } <= unrecorded
     assert "entladen_freigegeben" not in unrecorded
     assert "sperrgruende" not in unrecorded
+
+
+async def test_schnittstellen_sensor_zeigt_erkannte_nichtreaktion(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-018: der Soll/Ist-Vergleich des Marstek erscheint wie eine Gerätesperre, mit Grund und
+    dem Ladezustand, ab dem wieder geprüft wird."""
+    _entry, entity_ids = await _setup_with_state(
+        hass,
+        monkeypatch,
+        _state(
+            charge_allowed=True,
+            discharge_allowed=False,
+            lock_reasons=("keine_reaktion_entladen",),
+            lock_release_soc_percent=13,
+        ),
+    )
+
+    sensor = hass.states.get(entity_ids["hems_schnittstelle"])
+    assert sensor.state == "entladen_gesperrt"
+    assert sensor.attributes["sperrgruende"] == ["keine_reaktion_entladen"]
+    assert sensor.attributes["sperre_bis_soc_prozent"] == 13

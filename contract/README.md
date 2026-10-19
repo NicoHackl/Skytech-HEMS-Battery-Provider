@@ -21,4 +21,4 @@ Beschreibung der gemeinsamen Felder zu führen.
 
 | Gegenstelle | Vertrag | Stand / Hinweise |
 |---|---|---|
-| HEMS | [contract_hems_battery_provider.md](contract_hems_battery_provider/contract_hems_battery_provider.md) | Aktueller Austausch einschließlich dokumentierter Betriebsgrenzen; HEMS-Lebenszeichen und Schnittstellen-Sensor mit Gerätefreigaben implementiert, Bedeutung der Freigaben an Hardware zu bestätigen (Version 1.2). |
+| HEMS | [contract_hems_battery_provider.md](contract_hems_battery_provider/contract_hems_battery_provider.md) | Aktueller Austausch einschließlich dokumentierter Betriebsgrenzen; HEMS-Lebenszeichen und Schnittstellen-Sensor mit Gerätefreigaben implementiert, beim Marstek per Soll/Ist-Vergleich des Providers; E3DC-Statusbits noch nicht negativ getestet (Version 1.3). |

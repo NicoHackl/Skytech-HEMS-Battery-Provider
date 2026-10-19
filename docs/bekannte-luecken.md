@@ -337,7 +337,7 @@ eingeschaltet, `automation.pye3dc_max_ladeleistung_speicher_setzen` ausgeschalte
 | **Manuelle Sollwerte halten nur ~10 s.** `number.<prefix>_soll_*` schreibt einmalig, ohne Keep-Alive — bei E3DC übernimmt das Gerät danach selbst. Für Dauerbetrieb HEMS-Anbindung nutzen | `number.py` | Kein Bug, aber überraschend |
 | **Parallelbetrieb mit dem pyscript.** Laufen die pyscript-Automationen „E3DC Manuelle Leistung" oder „pyE3DC Max Ladeleistung Speicher setzen" weiter, schreiben zwei Stellen auf dasselbe Gerät; SmartPower-Limits (`set_power_limits`) können den Sollwert zusätzlich begrenzen | Home-Assistant-Konfiguration des Users | Eindeutige Steuerung |
 
-## Gerätefreigaben — an Hardware zu bestätigen (D-017)
+## Gerätefreigaben — an Hardware zu bestätigen (D-017, D-018)
 
 Anlass: Am 18.10.2026 von 09:01 bis 09:16 hat der Marstek (`acspeicher1`) eine vom HEMS
 angeforderte und von der Integration erfolgreich gesendete Entladung (bis 2320 W) nicht
@@ -348,7 +348,8 @@ mit Wiedereinschalt-Hysterese. Seit D-017 liest die Integration deshalb die Ger�
 
 | Frage | Betrifft | Blockiert |
 |---|---|---|
-| Geht `Bat.GetStatus.dischrg_flag` im Band 12–16 % nach einem Wiederaufladen tatsächlich auf `false`? Bleibt es `true`, obwohl der Speicher nicht entlädt, erklärt das Flag den Vorfall nicht | `adapters/marstek_udp.py: _read_device_status()` | Auswertung der Freigabe im HEMS (`provider_entity`) |
+| ~~Geht `Bat.GetStatus.dischrg_flag` im Band 12–16 % nach einem Wiederaufladen tatsächlich auf `false`?~~ **Beantwortet 19.10.2026: nein.** Bei 12 % SoC und bewusst auf 11 % gesenktem HEMS-`soc_min` verweigerte der Speicher von 06:40 bis 06:50, 07:37 bis 07:38 und 07:49 bis 07:50 jede Entladung (bis 1228 W angefordert, Ist 0 W); `entladen_freigegeben` blieb `true`. Seit D-018 erkennt der Adapter das über einen Soll/Ist-Vergleich | `adapters/marstek_udp.py` | – |
+| Passen die Defaults des Soll/Ist-Vergleichs (30 s, 100 W, 20 W) und die Freigabe bei 1 % SoC zur tatsächlichen Hysterese des Geräts? Beobachtet: Sperre ab 12 %, Entladen wieder ab etwa 15–17 % — die Freigabe bei +1 % führt dazwischen zu wiederholten Fehlversuchen von je höchstens 30 s | `adapters/marstek_udp.py: _ResponseCheck` | – |
 | Liefert das Gerät die Flags als JSON-Boolean? Andere Typen werden bewusst nicht gedeutet (Freigabe bleibt `None`); die Rohantwort steht im Debug-Log | `adapters/marstek_udp.py: _as_bool()` | – |
 | Entspricht die RSCP-Belegung von `EMS_STATUS` der Modbus-Doku (Bit 0/1 Laden/Entladen gesperrt, Bit 5/6 Sperrzeiten)? Abgleich: Attribut `geraet_status_roh` gegen `sensor.e3dc_ems_status_modbus` (am 18.10.2026 dort 132) | `adapters/e3dc_rscp.py: _read_device_status()` | Auswertung der Freigabe im HEMS für E3DC |
 | Setzt ein HEMS-Leerlaufbefehl (Betriebsart 1) beim E3DC selbst eine Sperre? In 7 Tagen Modbus-Verlauf kamen Bit 0/1 nie vor, eine Selbstblockade ist also nicht zu erwarten | E3DC-Verhalten | – |
