@@ -11,6 +11,8 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+## [0.6.0] — 19.10.2026
+
 ### Hinzugefügt — 19.10.2026
 
 - **Marstek: Erkennung, wenn der Speicher nicht reagiert.** Der Marstek meldet eine eigene
