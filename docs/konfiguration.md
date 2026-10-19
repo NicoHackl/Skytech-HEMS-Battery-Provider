@@ -20,6 +20,18 @@ Mit HEMS-Anbindung zeigt der Options-Flow zusätzlich `hems_timeout_factor` (D-0
 HEMS-Lebenszeichen als Vielfaches der HEMS-Zykluszeit, Default 3, erlaubt 2–10, ganzzahlig. Ohne
 Angabe des Intervalls durch das HEMS gilt eine feste Frist von 90 s.
 
+Beim Marstek zeigt der Options-Flow zusätzlich den Soll/Ist-Vergleich (D-018). Ohne Eintrag gelten
+die Defaults, auch für Bestandsgeräte:
+
+| Option | Default | Erlaubt | Bedeutung |
+|---|---|---|---|
+| `response_check_time_seconds` | 30 | 0 oder 10–600 s | Aufsummierte Zeit ohne Reaktion, ab der die Richtung gesperrt wird; `0` schaltet den Vergleich ab |
+| `response_check_min_request_w` | 100 | 20–5000 W | Geprüft wird erst ab diesem gesendeten Sollwert |
+| `response_check_max_actual_w` | 20 | 1–1000 W, kleiner als der Sollwert oben | Ist-Leistung der angeforderten Richtung darunter gilt als „keine Reaktion“ |
+
+Freigegeben wird eine Sperre fest bei 1 % Ladezustand Abstand (Entladen: gestiegen, Laden:
+gefallen); das ist bewusst kein Parameter (Entscheidung des Users, 19.10.2026).
+
 ## Konfigurationsdateien
 
 | Datei | Zweck | Eingecheckt |

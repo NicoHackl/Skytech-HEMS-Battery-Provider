@@ -47,16 +47,23 @@
     "step": {
       "init": {
         "title": "Einstellungen ändern",
-        "description": "Wie oft dieser Speicher abgefragt wird und — mit SkytechHEMS-Anbindung — wie lange er ohne Lebenszeichen des HEMS weiter dessen Sollwert umsetzt. Änderungen wirken sofort, ohne HA-Neustart.",
+        "description": "Wie oft dieser Speicher abgefragt wird, wie lange er ohne Lebenszeichen des HEMS weiter dessen Sollwert umsetzt und — beim Marstek — ab wann er als „reagiert nicht“ gilt. Setzt der Speicher einen Sollwert über die Erkennungszeit nicht um, wird die Richtung gesperrt, bis sich der Ladezustand um 1 % bewegt hat. Änderungen wirken sofort, ohne HA-Neustart.",
         "data": {
           "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)",
-          "hems_timeout_factor": "Frist ohne HEMS-Lebenszeichen (Vielfaches der HEMS-Zykluszeit, 2–10). Danach geht der Speicher auf 0 W."
+          "hems_timeout_factor": "Frist ohne HEMS-Lebenszeichen (Vielfaches der HEMS-Zykluszeit, 2–10). Danach geht der Speicher auf 0 W.",
+          "response_check_time_seconds": "Erkennungszeit ohne Reaktion (Sekunden, 10–600, 0 = aus)",
+          "response_check_min_request_w": "Prüfen ab Sollwert (W, 20–5000)",
+          "response_check_max_actual_w": "Als „keine Reaktion“ gilt Ist-Leistung unter (W, 1–1000)"
         }
       }
     },
     "error": {
       "invalid_update_interval": "Abfrageintervall muss zwischen 1 und 60 Sekunden liegen.",
-      "invalid_hems_timeout_factor": "Der Faktor muss zwischen 2 und 10 liegen."
+      "invalid_hems_timeout_factor": "Der Faktor muss zwischen 2 und 10 liegen.",
+      "invalid_response_check_time_seconds": "Die Erkennungszeit muss 0 oder 10 bis 600 Sekunden betragen.",
+      "invalid_response_check_min_request_w": "Der Sollwert muss zwischen 20 und 5000 W liegen.",
+      "invalid_response_check_max_actual_w": "Die Ist-Grenze muss zwischen 1 und 1000 W liegen.",
+      "response_check_actual_above_request": "Die Ist-Grenze muss kleiner sein als der Sollwert, ab dem geprüft wird."
     }
   },
   "entity": {

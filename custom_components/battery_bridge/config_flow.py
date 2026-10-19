@@ -31,8 +31,14 @@ from .const import (
     CONF_HEMS_TIMEOUT_FACTOR,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
+    CONF_RESPONSE_CHECK_MAX_ACTUAL,
+    CONF_RESPONSE_CHECK_MIN_REQUEST,
+    CONF_RESPONSE_CHECK_TIME,
     CONF_RSCP_KEY,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W,
+    DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W,
+    DEFAULT_RESPONSE_CHECK_TIME_SECONDS,
     DEFAULT_UPDATE_INTERVAL_SECONDS,
     DOMAIN,
     E3DC_RSCP_DEFAULT_PORT,
@@ -40,7 +46,13 @@ from .const import (
     MANUFACTURER_MARSTEK,
     MANUFACTURER_NAMES,
     MARSTEK_UDP_DEFAULT_PORT,
+    MAX_RESPONSE_CHECK_MAX_ACTUAL_W,
+    MAX_RESPONSE_CHECK_MIN_REQUEST_W,
+    MAX_RESPONSE_CHECK_TIME_SECONDS,
     MAX_UPDATE_INTERVAL_SECONDS,
+    MIN_RESPONSE_CHECK_MAX_ACTUAL_W,
+    MIN_RESPONSE_CHECK_MIN_REQUEST_W,
+    MIN_RESPONSE_CHECK_TIME_SECONDS,
     MIN_UPDATE_INTERVAL_SECONDS,
     PROTOCOL_E3DC_RSCP,
     PROTOCOL_MARSTEK_UDP,
@@ -64,6 +76,53 @@ def _validate_update_interval(user_input: dict[str, Any], errors: dict[str, str]
     if not (MIN_UPDATE_INTERVAL_SECONDS <= update_interval <= MAX_UPDATE_INTERVAL_SECONDS):
         errors[CONF_UPDATE_INTERVAL] = "invalid_update_interval"
     return update_interval
+
+
+# Soll/Ist-Vergleich (D-018): Feld, Default, Grenzen. Nur beim Marstek im Options-Flow.
+_RESPONSE_CHECK_FIELDS: tuple[tuple[str, int, int, int], ...] = (
+    (
+        CONF_RESPONSE_CHECK_TIME,
+        DEFAULT_RESPONSE_CHECK_TIME_SECONDS,
+        MIN_RESPONSE_CHECK_TIME_SECONDS,
+        MAX_RESPONSE_CHECK_TIME_SECONDS,
+    ),
+    (
+        CONF_RESPONSE_CHECK_MIN_REQUEST,
+        DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W,
+        MIN_RESPONSE_CHECK_MIN_REQUEST_W,
+        MAX_RESPONSE_CHECK_MIN_REQUEST_W,
+    ),
+    (
+        CONF_RESPONSE_CHECK_MAX_ACTUAL,
+        DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W,
+        MIN_RESPONSE_CHECK_MAX_ACTUAL_W,
+        MAX_RESPONSE_CHECK_MAX_ACTUAL_W,
+    ),
+)
+
+
+def _validate_response_check(
+    user_input: dict[str, Any], errors: dict[str, str]
+) -> dict[str, int]:
+    """Werte des Soll/Ist-Vergleichs prüfen — feldbezogen, wie `_validate_update_interval`.
+
+    Die Erkennungszeit darf zusätzlich `0` sein (Vergleich aus). Die Ist-Grenze muss unter der
+    Mindest-Anforderung liegen, sonst gälte jede Anforderung sofort als nicht umgesetzt.
+    """
+    values: dict[str, int] = {}
+    for key, default, minimum, maximum in _RESPONSE_CHECK_FIELDS:
+        value = user_input.get(key, default)
+        allowed_zero = key == CONF_RESPONSE_CHECK_TIME and value == 0
+        if not allowed_zero and not (minimum <= value <= maximum):
+            errors[key] = f"invalid_{key}"
+        values[key] = value
+    if (
+        CONF_RESPONSE_CHECK_MAX_ACTUAL not in errors
+        and CONF_RESPONSE_CHECK_MIN_REQUEST not in errors
+        and values[CONF_RESPONSE_CHECK_MAX_ACTUAL] >= values[CONF_RESPONSE_CHECK_MIN_REQUEST]
+    ):
+        errors[CONF_RESPONSE_CHECK_MAX_ACTUAL] = "response_check_actual_above_request"
+    return values
 
 
 class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -237,7 +296,8 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class BatteryBridgeOptionsFlowHandler(OptionsFlow):
-    """Options-Flow: Abfrageintervall, mit HEMS-Anbindung zusätzlich der Frist-Faktor (D-016)."""
+    """Options-Flow: Abfrageintervall, mit HEMS-Anbindung zusätzlich der Frist-Faktor (D-016),
+    beim Marstek zusätzlich der Soll/Ist-Vergleich (D-018)."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -245,6 +305,7 @@ class BatteryBridgeOptionsFlowHandler(OptionsFlow):
         """Einzelner Schritt: Abfrageintervall und ggf. Frist-Faktor anzeigen/ändern."""
         errors: dict[str, str] = {}
         has_hems = bool(self.config_entry.data.get(CONF_HEMS_ENTITY_PREFIX))
+        is_marstek = self.config_entry.data.get(CONF_MANUFACTURER) == MANUFACTURER_MARSTEK
 
         if user_input is not None:
             update_interval = _validate_update_interval(user_input, errors)
@@ -254,6 +315,8 @@ class BatteryBridgeOptionsFlowHandler(OptionsFlow):
                 if not (MIN_TIMEOUT_FACTOR <= factor <= MAX_TIMEOUT_FACTOR):
                     errors[CONF_HEMS_TIMEOUT_FACTOR] = "invalid_hems_timeout_factor"
                 data[CONF_HEMS_TIMEOUT_FACTOR] = factor
+            if is_marstek:
+                data.update(_validate_response_check(user_input, errors))
             if not errors:
                 return self.async_create_entry(title="", data=data)
 
@@ -268,6 +331,10 @@ class BatteryBridgeOptionsFlowHandler(OptionsFlow):
                 CONF_HEMS_TIMEOUT_FACTOR, DEFAULT_TIMEOUT_FACTOR
             )
             schema[vol.Optional(CONF_HEMS_TIMEOUT_FACTOR, default=current_factor)] = int
+        if is_marstek:
+            for key, default, _minimum, _maximum in _RESPONSE_CHECK_FIELDS:
+                current = self.config_entry.options.get(key, default)
+                schema[vol.Optional(key, default=current)] = int
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),

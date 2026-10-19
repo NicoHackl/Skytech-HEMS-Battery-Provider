@@ -15,8 +15,14 @@ from .const import (
     CONF_HEMS_TIMEOUT_FACTOR,
     CONF_MANUFACTURER,
     CONF_PROTOCOL,
+    CONF_RESPONSE_CHECK_MAX_ACTUAL,
+    CONF_RESPONSE_CHECK_MIN_REQUEST,
+    CONF_RESPONSE_CHECK_TIME,
     CONF_RSCP_KEY,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W,
+    DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W,
+    DEFAULT_RESPONSE_CHECK_TIME_SECONDS,
     DEFAULT_UPDATE_INTERVAL_SECONDS,
     MANUFACTURER_E3DC,
     MANUFACTURER_MARSTEK,
@@ -87,7 +93,22 @@ def _build_adapter(entry: BatteryBridgeConfigEntry) -> StorageAdapter:
     manufacturer = entry.data[CONF_MANUFACTURER]
     protocol = entry.data[CONF_PROTOCOL]
     if manufacturer == MANUFACTURER_MARSTEK and protocol == PROTOCOL_MARSTEK_UDP:
-        return MarstekUdpAdapter(entry.data[CONF_HOST], entry.data[CONF_PORT])
+        options = entry.options
+        return MarstekUdpAdapter(
+            entry.data[CONF_HOST],
+            entry.data[CONF_PORT],
+            # Soll/Ist-Vergleich (D-018), je Speicher im Options-Flow einstellbar.
+            response_check_time_s=options.get(
+                CONF_RESPONSE_CHECK_TIME, DEFAULT_RESPONSE_CHECK_TIME_SECONDS
+            ),
+            response_check_min_request_w=options.get(
+                CONF_RESPONSE_CHECK_MIN_REQUEST, DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W
+            ),
+            response_check_max_actual_w=options.get(
+                CONF_RESPONSE_CHECK_MAX_ACTUAL, DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W
+            ),
+            poll_interval_s=options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_SECONDS),
+        )
     if manufacturer == MANUFACTURER_E3DC and protocol == PROTOCOL_E3DC_RSCP:
         return E3dcRscpAdapter(
             entry.data[CONF_HOST],

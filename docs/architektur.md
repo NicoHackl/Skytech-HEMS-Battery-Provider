@@ -140,7 +140,10 @@ nächste HEMS-Sync das sofort überschreibt. Steht nach jedem Neustart/Neuladen 
 **Gerätestatus und Schnittstellen-Sensor (D-017):** Im selben `read()` lesen die Adapter den
 Gerätestatus mit — Marstek `Bat.GetStatus`, E3DC `EMS_REQ_STATUS` und `get_system_status()` —,
 aber höchstens alle `STATUS_POLL_INTERVAL` (15 s); dazwischen gilt der zwischengespeicherte Wert.
-Ein Fehlschlag dieser Zusatzabfrage lässt die Freigaben `None` und den Poll gültig. `sensor.py`
+Ein Fehlschlag dieser Zusatzabfrage lässt die Freigaben `None` und den Poll gültig. Der
+Marstek-Adapter vergleicht zusätzlich in jedem `read()` den zuletzt bestätigten Sollwert mit der
+Ist-Leistung (D-018, `_ResponseCheck`) und sperrt eine Richtung, die das Gerät nicht umsetzt;
+Parameter aus `entry.options`, Übergabe in `__init__.py: _build_adapter()`. `sensor.py`
 fasst `StorageState`, `HemsBridge.request`, `last_command`, `write_ok`, Lebenszeichen und Pause
 im Sensor `hems_schnittstelle` zusammen. Die Anbindung stößt dessen Aktualisierung zusätzlich bei
 jeder Helferänderung an, auch in der Pause.

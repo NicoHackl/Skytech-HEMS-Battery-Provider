@@ -11,6 +11,17 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Hinzugefügt — 19.10.2026
+
+- **Marstek: Erkennung, wenn der Speicher nicht reagiert.** Der Marstek meldet eine eigene
+  Entladesperre nicht. Die Integration vergleicht deshalb jetzt den gesendeten Sollwert mit der
+  tatsächlichen Leistung. Setzt der Speicher Laden oder Entladen 30 Sekunden lang nicht um, wird
+  die Richtung gesperrt. Der Sensor „HEMS-Schnittstelle“ zeigt dann z. B. „Entladen gesperrt“,
+  und SkytechHEMS kann den nächsten Speicher einspringen lassen. Sobald sich der Ladezustand um
+  1 % bewegt hat, wird es erneut versucht.
+- In den Einstellungen des Marstek lassen sich Erkennungszeit, Mindest-Sollwert und die Grenze für
+  „keine Reaktion“ ändern; Erkennungszeit 0 schaltet die Prüfung ab.
+
 ## [0.5.0] — 18.10.2026
 
 ### Hinzugefügt — 18.10.2026

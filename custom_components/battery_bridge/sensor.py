@@ -321,6 +321,7 @@ class BatteryBridgeHemsInterfaceSensor(CoordinatorEntity[BatteryBridgeCoordinato
             "batterietemperatur_c": state.temperature_c if state else None,
             "nennkapazitaet_wh": state.rated_capacity_wh if state else None,
             "geraet_status_roh": state.raw_status if state else None,
+            "sperre_bis_soc_prozent": state.lock_release_soc_percent if state else None,
             "hems_anforderung_w": request.power_w if request else None,
             "hems_anforderung_betriebsart": request.mode if request else None,
             "gesendet_ladeleistung_w": (
