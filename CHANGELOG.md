@@ -11,6 +11,12 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Dokumentation — 20.10.2026
+
+- Grundsatz der Skytech-Projekte in `contract/README.md` ergänzt: Jede Einheit, die anderen über
+  Home Assistant etwas mitteilt, veröffentlicht dafür genau eine Entität
+  `sensor.<einheit>_schnittstelle`. Liste aller Schnittstellen-Entitäten und der dokumentierten Ausnahmen nachgetragen; am Austausch mit SkytechHEMS ändert sich nichts.
+
 ### Geändert — 20.10.2026
 
 - **Eine Schnittstelle statt einem Sensor je Speicher.** Für SkytechHEMS gibt es jetzt genau einen
