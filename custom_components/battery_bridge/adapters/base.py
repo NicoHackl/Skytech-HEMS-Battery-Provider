@@ -42,6 +42,10 @@ class StorageAdapter(Protocol):
     # Obergrenze der Soll-Leistungs-Entities (number.py) in W — geräteabhängig.
     max_power_w: int
 
+    # Ob die HEMS-Anbindung für dieses Gerät Soll gegen Ist prüft (response_check.py, D-019).
+    # Nur für Geräte, die eine eigene Sperre nicht zuverlässig melden.
+    response_check_supported: bool
+
     async def connect(self) -> None:
         """Verbindung aufbauen bzw. Transport vorbereiten.
 

@@ -1,8 +1,9 @@
 """heartbeat.py — Auswertung des SkytechHEMS-Lebenszeichens (D-016).
 
-SkytechHEMS veröffentlicht nach jedem Regelzyklus `sensor.skytech_hems_status`; `state` ist ein
-Zykluszähler, der sich bei jeder Veröffentlichung ändert. Ein unverändert bleibender
-Sollwerthelfer ist dagegen normaler Betrieb und taugt nicht als Lebenszeichen. Vertrag:
+SkytechHEMS veröffentlicht nach jedem Regelzyklus seine Schnittstellen-Entität
+`sensor.hems_schnittstelle` (HEMS D-069); deren Attribut `zyklus_zaehler` ändert sich bei jeder
+Veröffentlichung. Der State ist die Liste der Speicher-Präfixe und taugt ebenso wenig als
+Lebenszeichen wie ein unverändert bleibender Sollwerthelfer — das ist normaler Betrieb. Vertrag:
 `contract/contract_hems_battery_provider/contract_hems_battery_provider.md`, Abschnitt
 „HEMS-Lebenszeichen".
 
@@ -27,13 +28,14 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any, Final
 
-STATUS_ENTITY_ID: Final = "sensor.skytech_hems_status"
+STATUS_ENTITY_ID: Final = "sensor.hems_schnittstelle"
 FALLBACK_TIMEOUT_S: Final = 90.0
 DEFAULT_TIMEOUT_FACTOR: Final = 3
 MIN_TIMEOUT_FACTOR: Final = 2
 MAX_TIMEOUT_FACTOR: Final = 10
 
-_INVALID_STATES: Final = frozenset({"unknown", "unavailable", ""})
+# Ein leerer State ist gültig: ohne Speicher ist die Präfixliste leer (HEMS D-069).
+_INVALID_STATES: Final = frozenset({"unknown", "unavailable"})
 
 
 class HemsHeartbeat:
@@ -58,8 +60,17 @@ class HemsHeartbeat:
         return self._factor * self._interval_s
 
     def observe(self, state: str | None, attributes: Mapping[str, Any] | None = None) -> None:
-        """Einen gelesenen Zustand der Statusentität verarbeiten (`None` = Entität fehlt)."""
-        value = None if state is None or state in _INVALID_STATES else state
+        """Einen gelesenen Zustand der Statusentität verarbeiten (`None` = Entität fehlt).
+
+        Ausgewertet wird `attributes.zyklus_zaehler`; State `unknown`/`unavailable` oder ein
+        fehlender Zähler gelten wie eine fehlende Entität.
+        """
+        counter = (attributes or {}).get("zyklus_zaehler")
+        value = (
+            None
+            if state is None or state in _INVALID_STATES or counter is None
+            else str(counter)
+        )
         self._interval_s = _parse_interval((attributes or {}).get("zyklus_intervall_s"))
         if not self._started:
             # Ausgangslage beim Start — nie selbst ein Beleg für einen frischen Zyklus.

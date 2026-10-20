@@ -1,12 +1,11 @@
-"""sensor.py — SoC, Ist-/HEMS-Soll-Ladeleistung, Ist-/HEMS-Soll-Entladeleistung je Speicher,
-dazu der Schnittstellen-Sensor zum HEMS (D-017)."""
+"""sensor.py — SoC, Ist-/HEMS-Soll-Ladeleistung, Ist-/HEMS-Soll-Entladeleistung je Speicher.
+
+Die Schnittstelle zum HEMS ist kein Sensor je Speicher, sondern `interface.py` (D-019)."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
-from zoneinfo import ZoneInfo
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -24,28 +23,6 @@ from .const import CONF_HEMS_ENTITY_PREFIX, CONF_MANUFACTURER, DOMAIN, MANUFACTU
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
 from .hems_bridge import HemsCommandState
 from .models import StorageState
-
-# Version der Attributstruktur des Schnittstellen-Sensors (Vertrag HEMS ↔ Battery-Provider 1.2).
-# Steigt nur bei einer inkompatiblen Änderung; neue Attribute kommen additiv dazu.
-INTERFACE_VERSION = 1
-
-# Betriebszustand des Schnittstellen-Sensors — stabile Werte, Teil des Vertrags. Angezeigt werden
-# die Übersetzungen aus strings.json, nie diese Schlüssel.
-INTERFACE_READY = "bereit"
-INTERFACE_CHARGE_LOCKED = "laden_gesperrt"
-INTERFACE_DISCHARGE_LOCKED = "entladen_gesperrt"
-INTERFACE_LOCKED = "gesperrt"
-INTERFACE_DISCONNECTED = "getrennt"
-INTERFACE_STATES = [
-    INTERFACE_READY,
-    INTERFACE_CHARGE_LOCKED,
-    INTERFACE_DISCHARGE_LOCKED,
-    INTERFACE_LOCKED,
-    INTERFACE_DISCONNECTED,
-]
-
-# Zeitzone für die Anzeige von `gemessen_am` (eiserne Regel 9) — Rechenvorschrift, kein Anzeigetext.
-_DISPLAY_TZ = ZoneInfo("Europe/Berlin")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -128,7 +105,6 @@ async def async_setup_entry(
             BatteryBridgeHemsCommandSensor(coordinator, entry, description)
             for description in HEMS_SENSOR_DESCRIPTIONS
         )
-        entities.append(BatteryBridgeHemsInterfaceSensor(coordinator, entry))
     async_add_entities(entities)
 
 
@@ -219,118 +195,3 @@ class BatteryBridgeHemsCommandSensor(CoordinatorEntity[BatteryBridgeCoordinator]
         if last_command is None:
             return None
         return self.entity_description.value_fn(last_command)
-
-
-_INTERFACE_DESCRIPTION = SensorEntityDescription(
-    key="hems_schnittstelle",
-    translation_key="hems_schnittstelle",
-    device_class=SensorDeviceClass.ENUM,
-    options=INTERFACE_STATES,
-)
-
-
-class BatteryBridgeHemsInterfaceSensor(CoordinatorEntity[BatteryBridgeCoordinator], SensorEntity):
-    """Alles, was zwischen HEMS und Provider fließt, an einer Stelle (D-017, Vertrag 1.2).
-
-    State ist der Betriebszustand des Speichers aus Sicht des HEMS. Die Attribute tragen die
-    Messwerte und Gerätefreigaben (Provider → HEMS) und spiegeln, was die Anbindung aus den
-    HEMS-Helfern gelesen und an das Gerät gesendet hat (HEMS → Provider). Das HEMS liest SoC,
-    Ist-Leistung und Freigaben direkt aus diesen Attributen.
-    """
-
-    entity_description: SensorEntityDescription
-    _attr_has_entity_name = True
-    # Schnell wechselnde Werte nicht in den Recorder: jede Attributänderung schriebe sonst den
-    # gesamten Attributsatz neu. Ihr Verlauf steht in den Einzel-Sensoren (Ist-/Soll-Leistung).
-    _unrecorded_attributes = frozenset(
-        {
-            "ist_ladeleistung_w",
-            "ist_entladeleistung_w",
-            "hems_anforderung_w",
-            "gesendet_ladeleistung_w",
-            "gesendet_entladeleistung_w",
-            "gemessen_am",
-        }
-    )
-
-    def __init__(
-        self,
-        coordinator: BatteryBridgeCoordinator,
-        entry: BatteryBridgeConfigEntry,
-    ) -> None:
-        super().__init__(coordinator)
-        self.entity_description = _INTERFACE_DESCRIPTION
-        device_id = entry.unique_id or entry.entry_id
-        self._attr_unique_id = f"{device_id}_{_INTERFACE_DESCRIPTION.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
-            name=entry.title,
-            manufacturer=MANUFACTURER_NAMES.get(
-                entry.data[CONF_MANUFACTURER], entry.data[CONF_MANUFACTURER]
-            ),
-        )
-
-    @property
-    def available(self) -> bool:
-        # Immer verfügbar: gerade der Ausfall der Geräteverbindung soll als `getrennt` sichtbar
-        # sein und vom HEMS gelesen werden, statt als `unavailable` zu verschwinden.
-        return True
-
-    def _measurement(self) -> StorageState | None:
-        """Der zuletzt gelesene Zustand — `None`, wenn der letzte Poll gescheitert ist."""
-        data = self.coordinator.data
-        if not self.coordinator.last_update_success or data is None or not data.available:
-            return None
-        return data
-
-    @property
-    def native_value(self) -> str:
-        state = self._measurement()
-        if state is None:
-            return INTERFACE_DISCONNECTED
-        charge_locked = state.charge_allowed is False
-        discharge_locked = state.discharge_allowed is False
-        if charge_locked and discharge_locked:
-            return INTERFACE_LOCKED
-        if charge_locked:
-            return INTERFACE_CHARGE_LOCKED
-        if discharge_locked:
-            return INTERFACE_DISCHARGE_LOCKED
-        return INTERFACE_READY
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        state = self._measurement()
-        bridge = self.coordinator.hems_bridge
-        command = bridge.last_command if bridge is not None else None
-        request = bridge.request if bridge is not None else None
-        return {
-            "schnittstelle_version": INTERFACE_VERSION,
-            "messung_ok": state is not None,
-            "gemessen_am": (
-                state.last_update.astimezone(_DISPLAY_TZ).strftime("%d.%m.%Y %H:%M:%S")
-                if state is not None
-                else None
-            ),
-            "soc_prozent": state.soc_percent if state else None,
-            "ist_ladeleistung_w": state.charge_power_w if state else None,
-            "ist_entladeleistung_w": state.discharge_power_w if state else None,
-            "laden_freigegeben": state.charge_allowed if state else None,
-            "entladen_freigegeben": state.discharge_allowed if state else None,
-            "sperrgruende": list(state.lock_reasons) if state else [],
-            "batterietemperatur_c": state.temperature_c if state else None,
-            "nennkapazitaet_wh": state.rated_capacity_wh if state else None,
-            "geraet_status_roh": state.raw_status if state else None,
-            "sperre_bis_soc_prozent": state.lock_release_soc_percent if state else None,
-            "hems_anforderung_w": request.power_w if request else None,
-            "hems_anforderung_betriebsart": request.mode if request else None,
-            "gesendet_ladeleistung_w": (
-                command.charge_power_w if command and bridge.write_ok else None
-            ),
-            "gesendet_entladeleistung_w": (
-                command.discharge_power_w if command and bridge.write_ok else None
-            ),
-            "senden_ok": bridge.write_ok if bridge is not None else None,
-            "hems_lebenszeichen": bridge.heartbeat_fresh if bridge is not None else None,
-            "hems_steuerung_aktiv": bridge.enabled if bridge is not None else None,
-        }

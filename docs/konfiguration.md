@@ -29,6 +29,8 @@ die Defaults, auch für Bestandsgeräte:
 | `response_check_min_request_w` | 100 | 20–5000 W | Geprüft wird erst ab diesem gesendeten Sollwert |
 | `response_check_max_actual_w` | 20 | 1–1000 W, kleiner als der Sollwert oben | Ist-Leistung der angeforderten Richtung darunter gilt als „keine Reaktion“ |
 
+Der Vergleich läuft nur mit HEMS-Anbindung (HEMS-Präfix) und rechnet seit D-019 mit den
+Istwerten, die SkytechHEMS in `sensor.hems_schnittstelle` liefert; fehlen sie, pausiert er.
 Freigegeben wird eine Sperre fest bei 1 % Ladezustand Abstand (Entladen: gestiegen, Laden:
 gefallen); das ist bewusst kein Parameter (Entscheidung des Users, 19.10.2026).
 

@@ -583,7 +583,9 @@ async def test_alter_positiver_sollwert_beim_start_loest_keine_ladung_aus(
     sondern 0 W, bis ein frischer HEMS-Zyklus gesehen wurde."""
     hass.states.async_set(_POWER_ENTITY, "800")
     hass.states.async_set(_MODE_ENTITY, "laden")
-    hass.states.async_set("sensor.skytech_hems_status", "57", {"zyklus_intervall_s": 30})
+    hass.states.async_set(
+        "sensor.hems_schnittstelle", "acspeicher1", {"zyklus_zaehler": 57, "zyklus_intervall_s": 30}
+    )
 
     calls, entry = await _setup_ohne_hems_zyklus(hass, monkeypatch)
 

@@ -30,5 +30,3 @@ class StorageState:
     temperature_c: float | None = None
     rated_capacity_wh: float | None = None
     raw_status: int | None = None
-    # Ladezustand, ab dem eine vom Adapter erkannte Nichtreaktion wieder freigegeben wird (D-018).
-    lock_release_soc_percent: float | None = None

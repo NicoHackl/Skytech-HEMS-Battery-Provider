@@ -137,16 +137,22 @@ Schreibpfad fort, ohne den HEMS-Vertrag selbst oder D-009 zu ändern — ausgesc
 `number.<prefix>_soll_ladeleistung`/`_soll_entladeleistung` von Hand bedienen, ohne dass der
 nächste HEMS-Sync das sofort überschreibt. Steht nach jedem Neustart/Neuladen wieder auf EIN.
 
-**Gerätestatus und Schnittstellen-Sensor (D-017):** Im selben `read()` lesen die Adapter den
-Gerätestatus mit — Marstek `Bat.GetStatus`, E3DC `EMS_REQ_STATUS` und `get_system_status()` —,
-aber höchstens alle `STATUS_POLL_INTERVAL` (15 s); dazwischen gilt der zwischengespeicherte Wert.
-Ein Fehlschlag dieser Zusatzabfrage lässt die Freigaben `None` und den Poll gültig. Der
-Marstek-Adapter vergleicht zusätzlich in jedem `read()` den zuletzt bestätigten Sollwert mit der
-Ist-Leistung (D-018, `_ResponseCheck`) und sperrt eine Richtung, die das Gerät nicht umsetzt;
-Parameter aus `entry.options`, Übergabe in `__init__.py: _build_adapter()`. `sensor.py`
-fasst `StorageState`, `HemsBridge.request`, `last_command`, `write_ok`, Lebenszeichen und Pause
-im Sensor `hems_schnittstelle` zusammen. Die Anbindung stößt dessen Aktualisierung zusätzlich bei
-jeder Helferänderung an, auch in der Pause.
+**Gerätestatus (D-017):** Im selben `read()` lesen die Adapter den Gerätestatus mit — Marstek
+`Bat.GetStatus`, E3DC `EMS_REQ_STATUS` und `get_system_status()` —, aber höchstens alle
+`STATUS_POLL_INTERVAL` (15 s); dazwischen gilt der zwischengespeicherte Wert. Ein Fehlschlag dieser
+Zusatzabfrage lässt die Freigaben `None` und den Poll gültig.
+
+**Soll/Ist-Vergleich (D-018/D-019):** Erlaubt ein Adapter ihn (`response_check_supported`, nur
+Marstek), baut `__init__.py: _build_response_check()` einen `ResponseCheck` (`response_check.py`)
+mit den Werten aus `entry.options` und gibt ihn der `HemsBridge`. Die Bridge schreibt ihn bei
+jeder Änderung von `sensor.hems_schnittstelle` fort: Soll ist `last_command`, Ist sind die
+HEMS-Istwerte dieses Präfixes, der SoC kommt aus `StorageState`. Eine Sperränderung stößt die
+Coordinator-Listener an.
+
+**Schnittstellen-Entität (D-019):** `interface.py` hält eine `BatteryProviderInterface` in
+`hass.data[DOMAIN]`. Jeder Eintrag mit HEMS-Präfix meldet sich beim Setup an und beim Unload ab;
+jede Coordinator-Aktualisierung schreibt `sensor.battery_provider_schnittstelle` neu (nur bei
+Änderung). Freigaben je Speicher: nicht erreichbar → gesperrt; sonst Gerätestatus und Soll/Ist-Sperre.
 
 Details zur öffentlichen Schnittstelle (Entities, Adapter-Vertrag): [api-referenz.md](api-referenz.md).
 

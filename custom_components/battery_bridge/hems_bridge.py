@@ -52,28 +52,34 @@ senden bei Bedarf selbst erneut) — traf so nicht zu, siehe ADR D-012. Bei E3DC
 kurz: das Gerät übernimmt nach rund 10 s ohne neuen Sollwert selbst wieder (D-015) — deshalb wird
 dort auch ein Sollwert von 0 W (Betriebsart „standby") laufend erneut gesendet.
 
-Lebenszeichen (D-016): Übersetzt wird nur, solange `sensor.skytech_hems_status` frisch ist
+Lebenszeichen (D-016): Übersetzt wird nur, solange `sensor.hems_schnittstelle` frisch ist
 (`heartbeat.py`). Steht das HEMS still, während HA weiterläuft, bliebe sonst ein alter Sollwert
 unbegrenzt aktiv — der Keep-Alive hielte ihn sogar am Leben. Nicht frisch heißt: beide Richtungen
 auf 0, wie bei „standby", und zwar auch im Keep-Alive-Takt. Nach dem Start gilt das Lebenszeichen
 erst nach einem frisch gesehenen HEMS-Zyklus; bis dahin bleibt der Speicher auf 0. Pausiert
 (switch.py) wird das Lebenszeichen nicht ausgewertet — die Pause schreibt ohnehin nichts.
+
+Soll/Ist-Vergleich (D-019): Erlaubt der Adapter ihn (`response_check_supported`, Marstek), schreibt
+jede Änderung von `sensor.hems_schnittstelle` den Vergleich in `response_check.py` fort — Soll ist
+`last_command`, Ist sind die HEMS-Istwerte dieses Präfixes. Eine Sperränderung stößt die
+Coordinator-Listener an, damit `interface.py` die Freigaben sofort neu veröffentlicht.
 """
 
 from __future__ import annotations
 
 import logging
-import math
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 
 from .adapters.base import StorageAdapterError
 from .heartbeat import DEFAULT_TIMEOUT_FACTOR, STATUS_ENTITY_ID, HemsHeartbeat
+from .response_check import ResponseCheck
 
 if TYPE_CHECKING:
     from .coordinator import BatteryBridgeCoordinator
@@ -100,18 +106,6 @@ class HemsCommandState:
     discharge_power_w: float
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class HemsRequestState:
-    """Aktuell in den HEMS-Helfern stehende Anforderung — Spiegel für den Schnittstellen-Sensor.
-
-    Genau das, was die Anbindung liest, nicht was sie daraus macht: `power_w` signiert wie im
-    Helfer (positiv laden, negativ entladen), `None`, wenn der Helfer fehlt oder keine Zahl ist.
-    """
-
-    mode: str | None
-    power_w: float | None
-
-
 class HemsBridge:
     """Beobachtet die HEMS-Anforderungshelfer eines Präfixes, übersetzt sie live in Sollwerte."""
 
@@ -120,6 +114,7 @@ class HemsBridge:
         coordinator: BatteryBridgeCoordinator,
         hems_entity_prefix: str,
         timeout_factor: float = DEFAULT_TIMEOUT_FACTOR,
+        response_check: ResponseCheck | None = None,
     ) -> None:
         self._coordinator = coordinator
         self._hass: HomeAssistant = coordinator.hass
@@ -131,6 +126,8 @@ class HemsBridge:
         self._unsub_heartbeat: Callable[[], None] | None = None
         self._unsub_heartbeat_check: Callable[[], None] | None = None
         self._heartbeat = HemsHeartbeat(timeout_factor)
+        # Soll/Ist-Vergleich (response_check.py, D-019) — nur wenn der Adapter ihn erlaubt.
+        self._response_check = response_check
         # Zuletzt festgestellte Frische — nur ihr Wechsel löst einen Sync und eine Logzeile aus.
         self._heartbeat_fresh = False
         self._warned_missing = False
@@ -158,14 +155,9 @@ class HemsBridge:
         return self._last_command
 
     @property
-    def request(self) -> HemsRequestState:
-        """Aktueller Stand der beiden HEMS-Helfer, unabhängig von Pause und Lebenszeichen."""
-        mode_state = self._hass.states.get(self._mode_entity_id)
-        power_state = self._hass.states.get(self._power_entity_id)
-        return HemsRequestState(
-            mode=None if mode_state is None else mode_state.state,
-            power_w=None if power_state is None else _parse_signed(power_state.state),
-        )
+    def response_check(self) -> ResponseCheck | None:
+        """Soll/Ist-Vergleich dieses Speichers, `None` ohne (für interface.py)."""
+        return self._response_check
 
     @property
     def write_ok(self) -> bool:
@@ -239,9 +231,6 @@ class HemsBridge:
             self._unsub_heartbeat_check = None
 
     async def _async_handle_event(self, _event: Event) -> None:
-        # Der Schnittstellen-Sensor spiegelt die Helfer (`request`) — auch während einer Pause,
-        # in der `_async_sync()` nichts schreibt und deshalb selbst nicht anstößt.
-        self._coordinator.async_update_listeners()
         await self._async_sync()
 
     async def _async_handle_keepalive(self, _now: datetime) -> None:
@@ -252,11 +241,38 @@ class HemsBridge:
 
     async def _async_handle_heartbeat(self, event: Event) -> None:
         new_state = event.data.get("new_state")
-        self._heartbeat.observe(
-            None if new_state is None else new_state.state,
-            None if new_state is None else new_state.attributes,
-        )
+        attributes = None if new_state is None else new_state.attributes
+        self._heartbeat.observe(None if new_state is None else new_state.state, attributes)
+        # sensor.hems_schnittstelle trägt auch die HEMS-Istwerte (HEMS D-069): jeder HEMS-Zyklus
+        # ist ein Schritt des Soll/Ist-Vergleichs.
+        if self._update_response_check(attributes):
+            self._coordinator.async_update_listeners()
         await self._async_check_heartbeat()
+
+    def _update_response_check(self, attributes: Mapping[str, Any] | None) -> bool:
+        """Soll/Ist-Vergleich mit den HEMS-Istwerten fortschreiben. True bei Sperränderung."""
+        check = self._response_check
+        if check is None:
+            return False
+        attributes = attributes or {}
+        command = self._last_command
+        # Nur ein bestätigt gesendeter Sollwert zählt; nach einem Schreibfehler ist offen, was
+        # am Gerät gilt.
+        requested_w = (
+            command.discharge_power_w - command.charge_power_w
+            if command is not None and self._write_ok
+            else 0.0
+        )
+        data = self._coordinator.data
+        soc = data.soc_percent if data is not None and data.available else None
+        return check.update(
+            time.monotonic(),
+            requested_w=requested_w,
+            charge_w=_parse_power(attributes.get(f"{self._prefix}_ladeleistung")),
+            discharge_w=_parse_power(attributes.get(f"{self._prefix}_entladeleistung")),
+            soc=soc,
+            interval_s=_parse_power(attributes.get("zyklus_intervall_s")),
+        )
 
     async def _async_handle_heartbeat_check(self, _now: datetime) -> None:
         await self._async_check_heartbeat()
@@ -378,10 +394,12 @@ def _parse_leistung(raw_state: str) -> float:
         return 0.0
 
 
-def _parse_signed(raw_state: str) -> float | None:
-    """Signierten Helferwert für den Spiegel lesen — `None` statt einer geratenen 0."""
+def _parse_power(raw: Any) -> float | None:
+    """Endliche Zahl ≥ 0 aus einem Attribut, sonst `None` — kein geratener Wert."""
+    if raw is None or isinstance(raw, bool):
+        return None
     try:
-        value = float(raw_state)
+        value = float(raw)
     except (TypeError, ValueError):
         return None
-    return value if math.isfinite(value) else None
+    return value if value >= 0 and value != float("inf") else None
