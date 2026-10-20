@@ -532,9 +532,7 @@ async def test_nicht_boolesche_flags_werden_nicht_geraten(
     assert state.discharge_allowed is None
 
 
-# ---------------------------------------------------------------------------
-# Soll/Ist-Vergleich (D-018)
-# ---------------------------------------------------------------------------
+# Gerätestatus über einen Fake mit Methodenweiche
 
 
 class _FakeMarstek:
@@ -560,7 +558,7 @@ async def _check_adapter(monkeypatch: pytest.MonkeyPatch, fake: _FakeMarstek, **
     now = [1000.0]
     monkeypatch.setattr(marstek_udp.time, "monotonic", lambda: now[0])
     _patch_endpoint(monkeypatch, fake)
-    adapter = MarstekUdpAdapter("127.0.0.1", 30000, **kwargs)
+    adapter = MarstekUdpAdapter("127.0.0.1", 30000)
     await adapter.connect()
 
     async def poll(seconds: float = 5):
@@ -570,140 +568,7 @@ async def _check_adapter(monkeypatch: pytest.MonkeyPatch, fake: _FakeMarstek, **
     return adapter, poll
 
 
-async def test_verweigerte_entladung_sperrt_nach_erkennungszeit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Vorfall 19.10.2026: SoC 12 %, Sollwert bestätigt, Ist bleibt 0 W, dischrg_flag true."""
-    fake = _FakeMarstek()
-    adapter, poll = await _check_adapter(monkeypatch, fake)
-    await adapter.write_discharge_power(528)
-
-    state = await poll(0)
-    for _ in range(5):
-        state = await poll()
-        assert state.discharge_allowed is True  # 25 s: noch nicht
-    state = await poll()  # 30 s ohne Reaktion
-
-    assert state.discharge_allowed is False
-    assert "keine_reaktion_entladen" in state.lock_reasons
-    assert state.charge_allowed is True
-    assert state.lock_release_soc_percent == 13
-
-
-async def test_fehlzeit_summiert_ueber_mehrere_anforderungen(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Pendeln wie am 18.10.2026: kurze Entladeanforderungen, dazwischen Laden."""
-    fake = _FakeMarstek()
-    adapter, poll = await _check_adapter(monkeypatch, fake)
-    await poll(0)
-    for _ in range(3):
-        await adapter.write_discharge_power(1400)
-        await poll()
-        await poll()  # 10 s ohne Reaktion
-        await adapter.write_charge_power(400)
-        fake.ongrid = -400  # Laden funktioniert
-        await poll()
-        fake.ongrid = 0
-    await adapter.write_discharge_power(1400)
-    state = await poll()  # 3 × 10 s = 30 s Fehlzeit beim Entladen
-
-    assert state.discharge_allowed is False
-    assert state.charge_allowed is True
-
-
-async def test_lieferung_setzt_fehlzeit_zurueck(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeMarstek()
-    adapter, poll = await _check_adapter(monkeypatch, fake)
-    await adapter.write_discharge_power(500)
-    await poll(0)
-    for _ in range(5):
-        await poll()  # 25 s
-    fake.ongrid = 480
-    await poll()  # liefert → 0
-    fake.ongrid = 0
-    for _ in range(5):
-        state = await poll()
-
-    assert state.discharge_allowed is True
-
-
-async def test_entladesperre_faellt_bei_soc_plus_ein_prozent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeMarstek()
-    adapter, poll = await _check_adapter(monkeypatch, fake)
-    await adapter.write_discharge_power(500)
-    await poll(0)
-    for _ in range(6):
-        state = await poll()
-    assert state.discharge_allowed is False
-
-    await adapter.write_charge_power(300)  # HEMS lädt aus PV, Speicher reagiert
-    fake.ongrid = -300
-    state = await poll()
-    assert state.discharge_allowed is False  # SoC noch 12 %
-    fake.soc = 13
-    state = await poll()
-
-    assert state.discharge_allowed is True
-    assert "keine_reaktion_entladen" not in state.lock_reasons
-    assert state.lock_release_soc_percent is None
-
-
-async def test_ladesperre_faellt_bei_soc_minus_ein_prozent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeMarstek()
-    fake.soc = 60
-    adapter, poll = await _check_adapter(monkeypatch, fake)
-    await adapter.write_charge_power(800)
-    await poll(0)
-    for _ in range(6):
-        state = await poll()
-    assert state.charge_allowed is False
-    assert "keine_reaktion_laden" in state.lock_reasons
-    assert state.lock_release_soc_percent == 59
-
-    fake.soc = 59
-    state = await poll()
-    assert state.charge_allowed is True
-
-
-async def test_kleiner_sollwert_wird_nicht_geprueft(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeMarstek()
-    adapter, poll = await _check_adapter(monkeypatch, fake)
-    await adapter.write_discharge_power(80)
-    await poll(0)
-    for _ in range(10):
-        state = await poll()
-
-    assert state.discharge_allowed is True
-
-
-async def test_erkennungszeit_null_schaltet_vergleich_ab(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeMarstek()
-    adapter, poll = await _check_adapter(monkeypatch, fake, response_check_time_s=0)
-    await adapter.write_discharge_power(500)
-    await poll(0)
-    for _ in range(20):
-        state = await poll()
-
-    assert state.discharge_allowed is True
-
-
-async def test_pollluecke_zaehlt_nicht_auf_einmal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Nach einer Ausfallphase zählt höchstens das Doppelte des Abfrageintervalls."""
-    fake = _FakeMarstek()
-    adapter, poll = await _check_adapter(monkeypatch, fake, poll_interval_s=5)
-    await adapter.write_discharge_power(500)
-    await poll(0)
-    state = await poll(300)
-
-    assert state.discharge_allowed is True
-
-
-async def test_geraeteflag_und_vergleich_wirken_gemeinsam(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_dischrg_flag_false_sperrt_entladen(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeMarstek()
     fake.dischrg_flag = False
     adapter, poll = await _check_adapter(monkeypatch, fake)

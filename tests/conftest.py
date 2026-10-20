@@ -96,13 +96,15 @@ def entity_ids_by_key(hass: HomeAssistant, entry: MockConfigEntry) -> dict[str, 
 _hems_counter = 0
 
 
-async def hems_zyklus(hass: HomeAssistant, interval_s: float = 30) -> None:
-    """Einen SkytechHEMS-Zyklus simulieren: das Lebenszeichen ändert seinen Zähler (D-016)."""
+async def hems_zyklus(
+    hass: HomeAssistant, interval_s: float = 30, **istwerte: float | None
+) -> None:
+    """Einen SkytechHEMS-Zyklus simulieren: `sensor.hems_schnittstelle` (HEMS D-069) ändert seinen
+    Zähler (Lebenszeichen, D-016). `istwerte` landen als Attribute, z. B.
+    `acspeicher1_entladeleistung=0` — `None` lässt das Attribut weg."""
     global _hems_counter
     _hems_counter += 1
-    hass.states.async_set(
-        "sensor.skytech_hems_status",
-        str(_hems_counter),
-        {"zyklus_zaehler": _hems_counter, "zyklus_intervall_s": interval_s},
-    )
+    attributes = {"zyklus_zaehler": _hems_counter, "zyklus_intervall_s": interval_s}
+    attributes.update({key: value for key, value in istwerte.items() if value is not None})
+    hass.states.async_set("sensor.hems_schnittstelle", "acspeicher1", attributes)
     await hass.async_block_till_done()

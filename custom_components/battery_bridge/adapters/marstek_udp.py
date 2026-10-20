@@ -38,9 +38,8 @@ Hardware bestätigt**, siehe docs/bekannte-luecken.md. Scheitert nur diese Abfra
 Freigaben `None` — der Messwert-Poll scheitert deswegen nicht.
 
 **Befund 19.10.2026:** `dischrg_flag` blieb `true`, während das Gerät bei 12 % SoC jede Entladung
-verweigerte. Deshalb vergleicht dieser Adapter zusätzlich Soll und Ist (D-018, `_ResponseCheck`):
-setzt das Gerät einen bestätigten Sollwert über eine aufsummierte Zeit nicht um, sperrt er die
-Richtung selbst, bis sich der SoC um 1 % in Gegenrichtung bewegt hat.
+verweigerte. Deshalb erlaubt dieser Adapter den Soll/Ist-Vergleich der HEMS-Anbindung
+(`response_check_supported`, `response_check.py`, D-018/D-019).
 """
 
 from __future__ import annotations
@@ -55,16 +54,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..const import (
-    DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W,
-    DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W,
-    DEFAULT_RESPONSE_CHECK_TIME_SECONDS,
-    DEFAULT_UPDATE_INTERVAL_SECONDS,
     HEMS_KEEPALIVE_INTERVAL,
     LOCK_CHARGE_DEVICE,
-    LOCK_CHARGE_NO_RESPONSE,
     LOCK_DISCHARGE_DEVICE,
-    LOCK_DISCHARGE_NO_RESPONSE,
-    RESPONSE_CHECK_RELEASE_SOC_PERCENT,
     STATUS_POLL_INTERVAL,
 )
 from ..models import StorageState
@@ -105,102 +97,6 @@ class _DeviceStatus:
     lock_reasons: tuple[str, ...] = field(default_factory=tuple)
 
 
-class _ResponseCheck:
-    """Soll/Ist-Vergleich je Richtung (D-018).
-
-    Gezählt wird die Zeit, in der ein gesendeter Sollwert ab `min_request_w` anliegt und die
-    Ist-Leistung derselben Richtung unter `max_actual_w` bleibt — **aufsummiert über mehrere
-    Anforderungen**, damit auch ein Pendeln mit kurzen Anforderungen (18.10.2026: 8–25 s) erkannt
-    wird. Liefert das Gerät, fällt die Zeit dieser Richtung auf 0. Ab `time_s` ist die Richtung
-    gesperrt, bis der SoC um `RESPONSE_CHECK_RELEASE_SOC_PERCENT` in Gegenrichtung gelaufen ist
-    (Entladen: SoC gestiegen, Laden: SoC gefallen); danach wird die nächste Anforderung neu
-    geprüft. `time_s` = 0 schaltet den Vergleich ab.
-    """
-
-    def __init__(
-        self, *, time_s: float, min_request_w: float, max_actual_w: float, max_step_s: float
-    ) -> None:
-        self.time_s = time_s
-        self.min_request_w = min_request_w
-        self.max_actual_w = max_actual_w
-        # Obergrenze je Zählschritt: nach einer Poll-Ausfallphase zählt die Lücke nicht auf
-        # einmal als „keine Reaktion".
-        self.max_step_s = max_step_s
-        self.requested_w = 0.0  # zuletzt bestätigter Passive-Sollwert, positiv = entladen
-        self.missed_s = {"charge": 0.0, "discharge": 0.0}
-        self.lock_soc: dict[str, float | None] = {"charge": None, "discharge": None}
-        self._last_check: float | None = None
-
-    @property
-    def enabled(self) -> bool:
-        return self.time_s > 0
-
-    def locked(self, direction: str) -> bool:
-        return self.lock_soc[direction] is not None
-
-    def release_soc(self, direction: str) -> float | None:
-        """SoC, ab dem die Sperre fällt — für Log und Anzeige."""
-        ref = self.lock_soc[direction]
-        if ref is None:
-            return None
-        step = RESPONSE_CHECK_RELEASE_SOC_PERCENT
-        return ref + step if direction == "discharge" else ref - step
-
-    def update(
-        self,
-        now: float,
-        soc: float | None,
-        charge_w: float | None,
-        discharge_w: float | None,
-        log_name: str,
-    ) -> None:
-        dt = 0.0 if self._last_check is None else min(now - self._last_check, self.max_step_s)
-        self._last_check = now
-        if not self.enabled:
-            return
-        self._release(soc, log_name)
-
-        if abs(self.requested_w) < self.min_request_w:
-            return
-        direction = "discharge" if self.requested_w > 0 else "charge"
-        actual = discharge_w if direction == "discharge" else charge_w
-        if actual is None or self.locked(direction):
-            return
-        if actual >= self.max_actual_w:
-            self.missed_s[direction] = 0.0
-            return
-        self.missed_s[direction] += dt
-        if self.missed_s[direction] >= self.time_s and soc is not None:
-            self.lock_soc[direction] = soc
-            self.missed_s[direction] = 0.0
-            _LOGGER.warning(
-                "%s setzt den Sollwert von %.0f W seit %.0f s nicht um (Ist %.0f W) — %s "
-                "gesperrt bis Ladezustand %s %.0f %%.",
-                log_name, abs(self.requested_w), self.time_s, actual,
-                "Entladen" if direction == "discharge" else "Laden",
-                "≥" if direction == "discharge" else "≤",
-                self.release_soc(direction),
-            )
-
-    def _release(self, soc: float | None, log_name: str) -> None:
-        if soc is None:
-            return  # ohne gültigen SoC bleibt eine Sperre bestehen
-        for direction in ("discharge", "charge"):
-            limit = self.release_soc(direction)
-            if limit is None:
-                continue
-            if (direction == "discharge" and soc >= limit) or (
-                direction == "charge" and soc <= limit
-            ):
-                self.lock_soc[direction] = None
-                self.missed_s[direction] = 0.0
-                _LOGGER.info(
-                    "%s: %s wieder freigegeben (Ladezustand %.0f %%), nächste Anforderung "
-                    "wird neu geprüft.",
-                    log_name, "Entladen" if direction == "discharge" else "Laden", soc,
-                )
-
-
 class _MarstekUdpProtocol(asyncio.DatagramProtocol):
     """Reicht eingehende Datagramme an eine Queue durch — ein Request ist immer am Leben."""
 
@@ -233,26 +129,13 @@ class MarstekUdpAdapter:
 
     keepalive_interval = HEMS_KEEPALIVE_INTERVAL
     max_power_w = _MAX_POWER_W
+    # Der Marstek meldet eine Entladesperre nicht selbst (Befund 19.10.2026): die HEMS-Anbindung
+    # prüft deshalb Soll gegen Ist (response_check.py, D-018/D-019).
+    response_check_supported = True
 
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        *,
-        response_check_time_s: float = DEFAULT_RESPONSE_CHECK_TIME_SECONDS,
-        response_check_min_request_w: float = DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W,
-        response_check_max_actual_w: float = DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W,
-        poll_interval_s: float = DEFAULT_UPDATE_INTERVAL_SECONDS,
-    ) -> None:
+    def __init__(self, host: str, port: int) -> None:
         self._host = host
         self._port = port
-        # Soll/Ist-Vergleich (D-018), Werte aus dem Options-Flow des Entry.
-        self._response_check = _ResponseCheck(
-            time_s=response_check_time_s,
-            min_request_w=response_check_min_request_w,
-            max_actual_w=response_check_max_actual_w,
-            max_step_s=2 * poll_interval_s,
-        )
         self._transport: asyncio.DatagramTransport | None = None
         self._protocol: _MarstekUdpProtocol | None = None
         # Eine Request-ID je Aufruf, über die gesamte Adapter-Lebensdauer fortlaufend —
@@ -374,38 +257,17 @@ class MarstekUdpAdapter:
             fallback_bat_power = -ongrid_power if ongrid_power is not None else None
             charge_power_w, discharge_power_w = _split_bat_power(fallback_bat_power)
         device_status = await self._read_device_status()
-        soc_percent = _as_float(result.get("bat_soc"))
-        check = self._response_check
-        check.update(
-            time.monotonic(), soc_percent, charge_power_w, discharge_power_w,
-            f"Marstek {self._host}",
-        )
-        charge_allowed = device_status.charge_allowed
-        discharge_allowed = device_status.discharge_allowed
-        lock_reasons = list(device_status.lock_reasons)
-        # Eine erkannte Nichtreaktion sperrt zusätzlich zur Gerätemeldung (D-018).
-        if check.locked("charge"):
-            charge_allowed = False
-            lock_reasons.append(LOCK_CHARGE_NO_RESPONSE)
-        if check.locked("discharge"):
-            discharge_allowed = False
-            lock_reasons.append(LOCK_DISCHARGE_NO_RESPONSE)
         return StorageState(
-            soc_percent=soc_percent,
+            soc_percent=_as_float(result.get("bat_soc")),
             charge_power_w=charge_power_w,
             discharge_power_w=discharge_power_w,
             available=True,
             last_update=datetime.now(UTC),
-            charge_allowed=charge_allowed,
-            discharge_allowed=discharge_allowed,
-            lock_reasons=tuple(lock_reasons),
+            charge_allowed=device_status.charge_allowed,
+            discharge_allowed=device_status.discharge_allowed,
+            lock_reasons=device_status.lock_reasons,
             temperature_c=device_status.temperature_c,
             rated_capacity_wh=device_status.rated_capacity_wh,
-            lock_release_soc_percent=next(
-                (soc for soc in (check.release_soc("discharge"), check.release_soc("charge"))
-                 if soc is not None),
-                None,
-            ),
         )
 
     async def _read_device_status(self) -> _DeviceStatus:
@@ -476,8 +338,6 @@ class MarstekUdpAdapter:
         )
         if not result.get("set_result"):
             raise StorageAdapterError(f"Marstek-Gerät hat den Sollwert abgelehnt: {result!r}")
-        # Erst ein bestätigter Sollwert ist Grundlage des Soll/Ist-Vergleichs (D-018).
-        self._response_check.requested_w = float(int(power))
 
     async def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         if not self._connected:

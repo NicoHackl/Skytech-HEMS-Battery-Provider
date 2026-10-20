@@ -160,7 +160,9 @@ async def test_soll_ist_werte_landen_im_adapter(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _mock_adapter(monkeypatch)
-    entry = make_marstek_entry()
+    monkeypatch.setattr(MarstekUdpAdapter, "write_charge_power", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "write_discharge_power", AsyncMock(return_value=None))
+    entry = make_marstek_entry(hems_entity_prefix="acspeicher1")
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -173,9 +175,9 @@ async def test_soll_ist_werte_landen_im_adapter(
     )
     await hass.async_block_till_done()
 
-    check = entry.runtime_data.adapter._response_check
+    # Der Vergleich gehört seit D-019 der HEMS-Anbindung, nicht mehr dem Adapter.
+    check = entry.runtime_data.hems_bridge.response_check
     assert (check.time_s, check.min_request_w, check.max_actual_w) == (45, 200, 30)
-    assert check.max_step_s == 10
 
 
 async def test_soll_ist_erkennungszeit_null_schaltet_ab(

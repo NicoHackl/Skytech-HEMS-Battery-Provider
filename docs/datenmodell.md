@@ -34,14 +34,13 @@ derselbe Entry bestehen, es entsteht kein doppelter.
 | `temperature_c` | `float \| None` | nein | Batterietemperatur in °C (Marstek `bat_temp`) |
 | `rated_capacity_wh` | `float \| None` | nein | Nennkapazität in Wh (Marstek `rated_capacity`) |
 | `raw_status` | `int \| None` | nein | Rohes Statusbitfeld des Geräts (E3DC `EMS_STATUS`), nur Diagnose |
-| `lock_release_soc_percent` | `float \| None` | nein | Ladezustand, ab dem eine vom Soll/Ist-Vergleich erkannte Sperre fällt (D-018) |
 
 Herkunft der Gerätestatus-Felder je Adapter (höchstens alle `STATUS_POLL_INTERVAL` = 15 s gelesen):
 
 | Feld | Marstek (`Bat.GetStatus`) | E3DC (RSCP) |
 |---|---|---|
-| `charge_allowed` | `charg_flag` und kein Soll/Ist-Befund `keine_reaktion_laden` (D-018) | nicht Bit 0 (Laden gesperrt) und nicht Bit 5 (Ladesperrzeit) von `EMS_STATUS` |
-| `discharge_allowed` | `dischrg_flag` und kein Soll/Ist-Befund `keine_reaktion_entladen` (D-018) | nicht Bit 1 (Entladen gesperrt), nicht Bit 6 (Entladesperrzeit), nicht `emergencyReserveReached` aus `get_system_status()` |
+| `charge_allowed` | `charg_flag` (Soll/Ist-Sperre kommt seit D-019 aus `ResponseCheck`, nicht aus `StorageState`) | nicht Bit 0 (Laden gesperrt) und nicht Bit 5 (Ladesperrzeit) von `EMS_STATUS` |
+| `discharge_allowed` | `dischrg_flag` (Soll/Ist-Sperre siehe `ResponseCheck`) | nicht Bit 1 (Entladen gesperrt), nicht Bit 6 (Entladesperrzeit), nicht `emergencyReserveReached` aus `get_system_status()` |
 
 Bedeutung im unteren SoC-Band (Marstek) und Bitbelegung (E3DC) sind an Hardware zu bestätigen,
 siehe [bekannte-luecken.md](bekannte-luecken.md#gerätefreigaben--an-hardware-zu-bestätigen-d-017).
@@ -61,10 +60,9 @@ Leerzustand-Konvention wie bei `StorageState`-Feldern: nie eine geratene 0 vort�
 die Sensoren `sensor.<prefix>_hems_soll_ladeleistung`/`_hems_soll_entladeleistung` — nur
 vorhanden, wenn der Entry ein HEMS-Präfix hat.
 
-`HemsRequestState` (`hems_bridge.py`, Property `HemsBridge.request`): Stand der beiden
-HEMS-Helfer, wie die Anbindung sie liest — `mode` (Text oder `None`, wenn der Helfer fehlt) und
-`power_w` (signiert wie im Helfer, `None` bei fehlendem oder nicht numerischem Wert). Nur Spiegel
-für den Schnittstellen-Sensor, keine Regelgröße.
+`ResponseCheck` (`response_check.py`, D-019): Zustand des Soll/Ist-Vergleichs je Speicher —
+aufsummierte Fehlzeit je Richtung (`missed_s`) und der Bezugs-SoC einer Sperre (`lock_soc`, `None`
+ohne Sperre). Nur im Arbeitsspeicher; nach einem Neustart oder Neuladen beginnt er leer.
 
 ## Datenverträge
 

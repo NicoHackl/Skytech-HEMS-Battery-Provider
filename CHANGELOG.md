@@ -11,6 +11,19 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Geändert — 20.10.2026
+
+- **Eine Schnittstelle statt einem Sensor je Speicher.** Für SkytechHEMS gibt es jetzt genau einen
+  Sensor „Battery-Provider-Schnittstelle“ (`sensor.battery_provider_schnittstelle`). Er nennt alle
+  Speicher mit HEMS-Anbindung und für jeden, ob Laden und Entladen gerade erlaubt sind und warum
+  nicht. Ein nicht erreichbarer Speicher gilt als gesperrt. Der bisherige Sensor
+  „HEMS-Schnittstelle“ je Speicher entfällt und wird automatisch entfernt.
+- Das Lebenszeichen von SkytechHEMS kommt jetzt aus dessen Sensor `sensor.hems_schnittstelle`.
+- Die Erkennung „Marstek reagiert nicht“ rechnet jetzt mit den schnelleren Messwerten von
+  SkytechHEMS. Liefert SkytechHEMS keine Messwerte, pausiert die Erkennung.
+- **SkytechHEMS ab 3.0.0 und diese Integration müssen zusammen aktualisiert werden** — sonst sieht
+  der Speicher kein Lebenszeichen und bleibt auf 0 W.
+
 ## [0.6.0] — 19.10.2026
 
 ### Hinzugefügt — 19.10.2026

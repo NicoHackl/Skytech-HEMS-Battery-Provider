@@ -6,6 +6,7 @@ from datetime import timedelta
 
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from .adapters.base import StorageAdapter
 from .adapters.e3dc_rscp import E3dcRscpAdapter
@@ -24,6 +25,7 @@ from .const import (
     DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W,
     DEFAULT_RESPONSE_CHECK_TIME_SECONDS,
     DEFAULT_UPDATE_INTERVAL_SECONDS,
+    DOMAIN,
     MANUFACTURER_E3DC,
     MANUFACTURER_MARSTEK,
     PROTOCOL_E3DC_RSCP,
@@ -32,6 +34,8 @@ from .const import (
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
 from .heartbeat import DEFAULT_TIMEOUT_FACTOR
 from .hems_bridge import HemsBridge
+from .interface import get_interface
+from .response_check import ResponseCheck
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -58,8 +62,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry
             coordinator,
             hems_entity_prefix,
             entry.options.get(CONF_HEMS_TIMEOUT_FACTOR, DEFAULT_TIMEOUT_FACTOR),
+            _build_response_check(entry, adapter),
         )
         await coordinator.hems_bridge.async_setup()
+        # Eine Schnittstellen-Entität für alle Speicher (D-019).
+        get_interface(hass).register(hems_entity_prefix, coordinator)
+    _remove_legacy_interface_sensor(hass, entry)
 
     entry.runtime_data = coordinator
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
@@ -79,6 +87,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntr
         coordinator = entry.runtime_data
         if coordinator.hems_bridge is not None:
             coordinator.hems_bridge.async_unload()
+            get_interface(hass).unregister(entry.data[CONF_HEMS_ENTITY_PREFIX])
         await coordinator.adapter.close()
     return unloaded
 
@@ -93,22 +102,7 @@ def _build_adapter(entry: BatteryBridgeConfigEntry) -> StorageAdapter:
     manufacturer = entry.data[CONF_MANUFACTURER]
     protocol = entry.data[CONF_PROTOCOL]
     if manufacturer == MANUFACTURER_MARSTEK and protocol == PROTOCOL_MARSTEK_UDP:
-        options = entry.options
-        return MarstekUdpAdapter(
-            entry.data[CONF_HOST],
-            entry.data[CONF_PORT],
-            # Soll/Ist-Vergleich (D-018), je Speicher im Options-Flow einstellbar.
-            response_check_time_s=options.get(
-                CONF_RESPONSE_CHECK_TIME, DEFAULT_RESPONSE_CHECK_TIME_SECONDS
-            ),
-            response_check_min_request_w=options.get(
-                CONF_RESPONSE_CHECK_MIN_REQUEST, DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W
-            ),
-            response_check_max_actual_w=options.get(
-                CONF_RESPONSE_CHECK_MAX_ACTUAL, DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W
-            ),
-            poll_interval_s=options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_SECONDS),
-        )
+        return MarstekUdpAdapter(entry.data[CONF_HOST], entry.data[CONF_PORT])
     if manufacturer == MANUFACTURER_E3DC and protocol == PROTOCOL_E3DC_RSCP:
         return E3dcRscpAdapter(
             entry.data[CONF_HOST],
@@ -118,3 +112,35 @@ def _build_adapter(entry: BatteryBridgeConfigEntry) -> StorageAdapter:
             entry.data[CONF_RSCP_KEY],
         )
     raise ValueError(f"Unbekannter Hersteller/Protokoll: {manufacturer}/{protocol}")
+
+
+def _build_response_check(
+    entry: BatteryBridgeConfigEntry, adapter: StorageAdapter
+) -> ResponseCheck | None:
+    """Soll/Ist-Vergleich (D-018/D-019), nur wenn der Adapter ihn vorsieht (Marstek)."""
+    if not adapter.response_check_supported:
+        return None
+    options = entry.options
+    return ResponseCheck(
+        name=entry.title,
+        time_s=options.get(CONF_RESPONSE_CHECK_TIME, DEFAULT_RESPONSE_CHECK_TIME_SECONDS),
+        min_request_w=options.get(
+            CONF_RESPONSE_CHECK_MIN_REQUEST, DEFAULT_RESPONSE_CHECK_MIN_REQUEST_W
+        ),
+        max_actual_w=options.get(
+            CONF_RESPONSE_CHECK_MAX_ACTUAL, DEFAULT_RESPONSE_CHECK_MAX_ACTUAL_W
+        ),
+    )
+
+
+def _remove_legacy_interface_sensor(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> None:
+    """Den Schnittstellen-Sensor je Speicher aus 0.5.0/0.6.0 (D-017) aus der Registry entfernen.
+
+    Seit D-019 gibt es nur noch `sensor.battery_provider_schnittstelle`; ohne Aufräumen bliebe die
+    alte Entität als „nicht mehr bereitgestellt“ stehen.
+    """
+    registry = er.async_get(hass)
+    device_id = entry.unique_id or entry.entry_id
+    entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"{device_id}_hems_schnittstelle")
+    if entity_id is not None:
+        registry.async_remove(entity_id)

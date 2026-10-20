@@ -354,6 +354,14 @@ mit Wiedereinschalt-Hysterese. Seit D-017 liest die Integration deshalb die Ger�
 | Entspricht die RSCP-Belegung von `EMS_STATUS` der Modbus-Doku (Bit 0/1 Laden/Entladen gesperrt, Bit 5/6 Sperrzeiten)? Abgleich: Attribut `geraet_status_roh` gegen `sensor.e3dc_ems_status_modbus` (am 18.10.2026 dort 132) | `adapters/e3dc_rscp.py: _read_device_status()` | Auswertung der Freigabe im HEMS für E3DC |
 | Setzt ein HEMS-Leerlaufbefehl (Betriebsart 1) beim E3DC selbst eine Sperre? In 7 Tagen Modbus-Verlauf kamen Bit 0/1 nie vor, eine Selbstblockade ist also nicht zu erwarten | E3DC-Verhalten | – |
 
+## Umstellung auf Vertrag 2.0 (D-019)
+
+| Punkt | Folge |
+|---|---|
+| HEMS ab 3.0.0 und diese Integration müssen zusammen aktualisiert werden | Ohne `sensor.hems_schnittstelle` sieht die Anbindung kein Lebenszeichen und hält den Speicher auf 0 W |
+| `sensor.battery_provider_schnittstelle` ist keine Registry-Entität | Nicht in der Oberfläche umbenennbar; nach einem HA-Neustart erst da, wenn der erste Eintrag geladen ist |
+| Soll/Ist-Vergleich braucht HEMS-Istwerte | Ohne `<prefix>_ladeleistung`/`_entladeleistung` in `sensor.hems_schnittstelle` (z. B. ungültige HEMS-Sensoren, Notabschaltung) pausiert die Erkennung |
+
 ## Bewusst nicht umgesetzt
 
 | Thema | Warum nicht | Verweis |
