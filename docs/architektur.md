@@ -226,3 +226,10 @@ pytest
 `hassfest` und die HACS-Validierung sind **keine lokal ausführbaren Befehle** — beide laufen als
 GitHub Actions (`.github/workflows/hassfest.yml`, `hacs.yml`), so wie HA-Integrationen sie
 standardmäßig prüfen (kein pip-Paket dafür). Konfiguration: [konfiguration.md](konfiguration.md).
+
+## HEMS-Erweiterung für EVMS
+
+HEMS ergänzt seine Schnittstelle um Ladeziel-Metadaten für Wallboxen.
+Der [bestehende Speichervertrag](../contract/contract_hems_battery_provider/contract_hems_battery_provider.md)
+bleibt unverändert; der Battery-Provider ignoriert diese Zusatzattribute und
+steuert weiter stationäre Speicher. Es entsteht kein direkter EVMS-Regelweg hier.

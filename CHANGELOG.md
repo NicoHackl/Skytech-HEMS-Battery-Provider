@@ -9,6 +9,11 @@ Kategorien: `Hinzugefügt`, `Geändert`, `Veraltet`, `Entfernt`, `Behoben`, `Sic
 Einträge werden aus **Nutzersicht** formuliert — was sich für den Anwender ändert, nicht welche
 Datei angefasst wurde.
 
+## EVMS-Vorbereitung — 21.10.2026
+
+- Dokumentation und HEMS-Vertragskopie für additive Watt-Ladeziele abgeglichen.
+  Laufzeit unverändert; gemeinsames Arbeitspaket EVMS-P0/P1.
+
 ## Unveröffentlicht
 
 ### Dokumentation — 20.10.2026

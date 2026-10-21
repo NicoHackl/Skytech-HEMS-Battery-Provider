@@ -51,3 +51,10 @@ Dokumentierte Ausnahmen:
 | Gegenstelle | Vertrag | Stand / Hinweise |
 |---|---|---|
 | HEMS | [contract_hems_battery_provider.md](contract_hems_battery_provider/contract_hems_battery_provider.md) | Aktueller Austausch einschließlich dokumentierter Betriebsgrenzen; Version 2.0: je Einheit eine Schnittstellen-Entität (`sensor.hems_schnittstelle`, `sensor.battery_provider_schnittstelle`); Marstek-Freigaben per Soll/Ist-Vergleich mit HEMS-Istwerten; E3DC-Statusbits noch nicht negativ getestet. |
+
+## EVMS-Vorbereitung — 21.10.2026
+
+Die HEMS-Erweiterung für Watt-Ladeziele ist im bestehenden Paarvertrag dokumentiert.
+EVMS bleibt eine gesonderte geplante Einheit; keine zusätzliche direkte Schnittstelle
+in diesem Repository. HEMS behält den Speicher-State seiner Schnittstelle und ergänzt
+Ladeziel-Bestätigungen additiv; Bestandsverträge bleiben kompatibel.
