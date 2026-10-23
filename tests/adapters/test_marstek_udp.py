@@ -192,6 +192,29 @@ async def test_read_verwirft_antwort_mit_falscher_id(monkeypatch: pytest.MonkeyP
         await adapter.read()
 
 
+def _uint16_responder(result: dict) -> Responder:
+    """Antwortet wie das echte Gerät: die Request-ID kommt nur als 16-Bit-Wert zurück."""
+    return lambda request: {"id": request["id"] & 0xFFFF, "src": "test", "result": result}
+
+
+async def test_request_id_bleibt_im_16_bit_bereich_des_geraets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nach 65535 beginnt die ID wieder bei 1 — sonst passt ab 65536 keine Antwort mehr."""
+    adapter, transports = await _connected_adapter_with_transports(
+        monkeypatch, _uint16_responder({"bat_soc": 55})
+    )
+    # Zähler kurz vor die Grenze vorspulen, wie nach gut zwei Tagen Laufzeit im 5-s-Takt.
+    for _ in range(65533):
+        next(adapter._request_ids)
+
+    for _ in range(4):
+        state = await adapter._call("ES.GetStatus", {"id": 0})
+        assert state == {"bat_soc": 55}
+
+    assert [request["id"] for request in transports[0].sent] == [65534, 65535, 1, 2]
+
+
 async def test_read_wirft_bei_fehlerantwort_ohne_result(monkeypatch: pytest.MonkeyPatch) -> None:
     """Antwort ohne `result` (Gerätefehler) wird nicht als leerer Erfolg interpretiert."""
 

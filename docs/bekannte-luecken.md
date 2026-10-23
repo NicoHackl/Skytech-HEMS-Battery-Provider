@@ -279,6 +279,42 @@ Fehler und ihr Ende als Warnung — vorher stand dieselbe Zeile 114-mal im Log. 
 `test_erfolgreicher_sync_nach_fehler_meldet_wieder_ok`,
 `test_hems_sensoren_sind_bei_schreibfehler_nicht_verfuegbar`.
 
+## Verbindung reißt erneut ab, nur Neuladen half (gemeldet 23.10.2026, behoben)
+
+User-Beobachtung: Der Marstek verliert immer wieder die Verbindung, erst ein Neuladen der
+Integration hilft. Per HA-Verlauf (`sensor.<prefix>_ladezustand`) und Systemlog rekonstruiert:
+
+| Beginn | Ende | Dauer | Ausgang |
+|---|---|---|---|
+| 22.10.2026 15:19:15 | 15:20:18 | 63 s | selbst erholt (Neuaufbau D-013) |
+| 22.10.2026 15:33:43 | 15:34:21 | 38 s | selbst erholt |
+| 22.10.2026 17:51:27 | 17:52:00 | 33 s | selbst erholt |
+| 22.10.2026 19:34:04 | 19:35:07 | 63 s | selbst erholt |
+| 23.10.2026 05:13:08 | 06:32:10 | 79 min | erst durch Neuladen |
+
+Der Neuaufbau aus D-013 lief beim letzten Ausfall nachweislich an (Warnung „wird neu aufgebaut"
+um 05:13:08), half aber 79 Minuten lang nicht. Das Neuladen half sofort.
+
+**Ursache:** Das Gerät führt die JSON-RPC-`id` nur als 16-Bit-Wert. Am 23.10.2026 direkt am
+Gerät nachgemessen (`ES.GetStatus`, sonst identische Anfrage): `id` 1, 32767, 32768 und 65535
+kommen unverändert zurück, auf 65536 antwortet das Gerät mit `id` 0, auf 70000 mit 4464, auf
+100000 mit 34464. Der Adapter zählte seine Request-ID über die gesamte Lebensdauer unbegrenzt
+hoch und verwirft jede Antwort, deren `id` nicht passt. Ab Aufruf 65536 hat das Gerät also
+weiter geantwortet, der Adapter hat jede Antwort als fremd verworfen. Der Neuaufbau aus D-013
+erzeugt einen neuen Socket, behält aber den Zähler — erst das Neuladen legt einen neuen Adapter
+an, dessen Zähler wieder bei 1 beginnt. Grob nachgerechnet: Der Adapter lief seit 20.10.2026
+19:41; 5-s-Poll, `Bat.GetStatus` alle 15 s, Keep-Alive und HEMS-Schreibvorgänge ergeben bis
+23.10.2026 05:13 rund 65 000 Aufrufe. Die kurzen Ausfälle vom 22.10.2026 haben eine andere,
+unbekannte Ursache (vermutlich WLAN) und wurden vom Neuaufbau wie vorgesehen abgefangen.
+
+Auch der Ausfall vom 10.09.2026 (oben) passt in dieses Muster: Damals lief ein 1-s-Poll, die
+Grenze war nach knapp einem Tag erreicht. Ob dort zusätzlich der Socket tot war, lässt sich
+nachträglich nicht mehr trennen; der Neuaufbau aus D-013 bleibt als Absicherung bestehen.
+
+**Fix (D-020):** Die Request-ID läuft im Bereich 1–65535 und beginnt danach wieder bei 1
+(`_MAX_REQUEST_ID` in `adapters/marstek_udp.py`). Test:
+`test_request_id_bleibt_im_16_bit_bereich_des_geraets`.
+
 ## Stolpersteine
 
 Dinge, die schon einmal Zeit gekostet haben:

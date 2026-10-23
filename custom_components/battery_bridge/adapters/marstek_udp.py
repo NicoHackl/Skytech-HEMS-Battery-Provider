@@ -68,6 +68,11 @@ _METHOD_ES_GET_STATUS = "ES.GetStatus"
 _METHOD_BAT_GET_STATUS = "Bat.GetStatus"
 _METHOD_ES_SET_MODE = "ES.SetMode"
 _REQUEST_TIMEOUT_S = 1.0
+# Das Gerät führt die Request-ID nur als 16-Bit-Wert: auf `id` 65536 antwortet es mit `id` 0, auf
+# 70000 mit 4464 (am 23.10.2026 am Venus E 3.0 nachgemessen). Ein ungebremst hochzählender Zähler
+# passt ab 65536 nie mehr zur Antwort — jede Antwort würde als fremd verworfen, bis die
+# Integration neu geladen wird (siehe `_request_ids` in `__init__()`).
+_MAX_REQUEST_ID = 0xFFFF
 _REQUEST_RETRIES = 3
 # Nach so vielen aufeinanderfolgend erfolglosen Aufrufen wird der UDP-Transport verworfen und beim
 # nächsten Aufruf neu aufgebaut (siehe Moduldoc). Ein erfolgloser Aufruf dauert bereits
@@ -138,10 +143,12 @@ class MarstekUdpAdapter:
         self._port = port
         self._transport: asyncio.DatagramTransport | None = None
         self._protocol: _MarstekUdpProtocol | None = None
-        # Eine Request-ID je Aufruf, über die gesamte Adapter-Lebensdauer fortlaufend —
-        # verhindert, dass eine verspätete Antwort auf einen früheren Request als aktuell
-        # durchgeht.
-        self._request_ids = itertools.count(1)
+        # Eine Request-ID je Aufruf, fortlaufend im 16-Bit-Bereich des Geräts und danach wieder
+        # ab 1 — verhindert, dass eine verspätete Antwort auf einen früheren Request als aktuell
+        # durchgeht. Bis 23.10.2026 zählte der Zähler unbegrenzt: nach rund 65 000 Aufrufen
+        # (bei 5-s-Takt gut zwei Tage) passte keine Antwort mehr, und auch der Neuaufbau des
+        # Sockets half nicht, weil er den Zähler behielt (siehe `_MAX_REQUEST_ID`).
+        self._request_ids = itertools.cycle(range(1, _MAX_REQUEST_ID + 1))
         # Serialisiert alle _call()-Aufrufe: Coordinator-Poll (read()) und HEMS-Anbindung
         # (write_charge_power()/write_discharge_power(), auf demselben Adapter, aber als
         # eigener, event-getriebener Task) griffen sonst gleichzeitig auf dieselbe

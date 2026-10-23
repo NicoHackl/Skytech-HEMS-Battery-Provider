@@ -21,14 +21,40 @@ Beschreibung der gemeinsamen Felder zu führen.
 
 ## Grundsatz: eine Schnittstellen-Entität je Einheit
 
-Seit 20.10.2026 (Entscheidung des Users) veröffentlicht jede Einheit — SkytechHEMS, jeder
-Provider — genau **eine** Entität `sensor.<einheit>_schnittstelle`, die alle Informationen für
-alle anderen Teilnehmer enthält (Werte als Attribute, je Gerät mit dessen Präfix vorne).
-Umgesetzt: `sensor.hems_schnittstelle` (Lebenszeichen, Istwerte der Speicher) und
-`sensor.battery_provider_schnittstelle` (Freigaben der Speicher). Sollwerte laufen weiter über die
-`input_*`-Ausgabehelfer. Offen: die Paare HEMS ↔ Energy-Pilot, HEMS ↔ Powerflow-Card und
-HEMS ↔ Data-Insight folgen in eigenen Arbeitspaketen.
+Seit 20.10.2026 (Entscheidung des Users) gilt für den Austausch über Home Assistant: Jede Einheit,
+die anderen Teilnehmern etwas mitteilt, veröffentlicht dafür genau **eine** Entität
+`sensor.<einheit>_schnittstelle` mit allen Informationen für alle anderen Teilnehmer. Werte stehen
+als Attribute, je Gerät mit dessen Präfix vorne; der State nennt die Präfixe, durch Komma getrennt.
+Sollwerte des HEMS laufen weiter über seine `input_*`-Ausgabehelfer.
+
+| Einheit | Schnittstellen-Entität | Inhalt | Leser |
+|---|---|---|---|
+| SkytechHEMS | `sensor.hems_schnittstelle` | Lebenszeichen, Istwerte der Speicher | Battery-Provider, Wallbox-Provider |
+| Battery-Provider | `sensor.battery_provider_schnittstelle` | Lade-/Entladefreigabe und Sperrgrund je Speicher | SkytechHEMS |
+| Wallbox-Provider | `sensor.wallbox_provider_schnittstelle` | Freigabe und Sperrgrund je Wallbox | SkytechHEMS |
+| Energy Pilot | `sensor.energy_pilot_schnittstelle` | Vorschläge je Gerät mit Gültigkeitsfenster | SkytechHEMS |
+
+Dokumentierte Ausnahmen:
+
+- **Powerflow-Card:** `sensor.skytech_hems_flow_config` und `sensor.skytech_hems_flow_status`
+  bleiben getrennt. Sie sind Anzeigedaten für eine Karte, und die große Konfiguration soll nur bei
+  Änderung geschrieben werden. Die Karte selbst veröffentlicht nichts.
+- **Anzeige-Entitäten** für Nutzer und Dashboards bleiben einzeln, z. B.
+  `sensor.ems_<prefix>_lade_limit_w`, `sensor.ems_notabschaltung_aktiv`, `sensor.ems_dyn_*`,
+  `sensor.ep_plan_status`, `sensor.ep_hems_verbindung` und die EP-Zusatz-Vorschläge
+  `sensor.ep_<obj>_vorschlag`.
+- **HEMS → Energy Pilot** bleibt REST (`/api/device_controls_schema`, `/api/status`): groß und nur
+  bei Bedarf gelesen.
+- **Data Insight** tauscht über die Datenbank aus (Funktionen und Sichten), nicht über
+  HA-Entitäten; der Grundsatz betrifft diesen Weg nicht.
 
 | Gegenstelle | Vertrag | Stand / Hinweise |
 |---|---|---|
 | HEMS | [contract_hems_battery_provider.md](contract_hems_battery_provider/contract_hems_battery_provider.md) | Aktueller Austausch einschließlich dokumentierter Betriebsgrenzen; Version 2.0: je Einheit eine Schnittstellen-Entität (`sensor.hems_schnittstelle`, `sensor.battery_provider_schnittstelle`); Marstek-Freigaben per Soll/Ist-Vergleich mit HEMS-Istwerten; E3DC-Statusbits noch nicht negativ getestet. |
+
+## EVMS-Vorbereitung — 21.10.2026
+
+Die HEMS-Erweiterung für Watt-Ladeziele ist im bestehenden Paarvertrag dokumentiert.
+EVMS bleibt eine gesonderte geplante Einheit; keine zusätzliche direkte Schnittstelle
+in diesem Repository. HEMS behält den Speicher-State seiner Schnittstelle und ergänzt
+Ladeziel-Bestätigungen additiv; Bestandsverträge bleiben kompatibel.
