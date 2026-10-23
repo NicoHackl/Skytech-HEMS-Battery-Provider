@@ -126,6 +126,13 @@ Option A, in drei Teilen:
 - **Aufwand:** Rund 100 Zeilen im Adapter, je ein kleiner Eingriff in Coordinator, HEMS-Anbindung
   und Sensoren, neun neue Tests.
 
+## Nachtrag 23.10.2026
+
+Der Neuaufbau allein reichte nicht: Am 23.10.2026 fiel die Anbindung 79 Minuten aus, obwohl der
+Adapter neu verband. Ursache war der Request-ID-Zähler, den der Neuaufbau behält und den das Gerät
+nur als 16-Bit-Wert zurückgibt — behoben mit D-020. Vermutlich war das auch beim Vorfall vom
+10.09.2026 beteiligt. Diese Entscheidung bleibt als Absicherung gegen tote Sockets aktiv.
+
 ## Rücknahmebedingung
 
 Treten die Ausfälle weiterhin auf, obwohl der Adapter neu verbindet, liegt die Ursache nicht am

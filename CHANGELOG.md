@@ -16,6 +16,12 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Behoben — 23.10.2026
+
+- **Marstek verliert nach etwa zwei Tagen nicht mehr dauerhaft die Verbindung.** Bisher blieb der
+  Speicher nach rund 65 000 Abfragen „nicht verfügbar", bis die Integration neu geladen wurde.
+  Die Anbindung läuft jetzt ohne Neuladen weiter.
+
 ### Dokumentation — 20.10.2026
 
 - Grundsatz der Skytech-Projekte in `contract/README.md` ergänzt: Jede Einheit, die anderen über
