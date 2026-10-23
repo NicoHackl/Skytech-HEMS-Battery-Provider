@@ -9,12 +9,9 @@ Kategorien: `Hinzugefügt`, `Geändert`, `Veraltet`, `Entfernt`, `Behoben`, `Sic
 Einträge werden aus **Nutzersicht** formuliert — was sich für den Anwender ändert, nicht welche
 Datei angefasst wurde.
 
-## EVMS-Vorbereitung — 21.10.2026
-
-- Dokumentation und HEMS-Vertragskopie für additive Watt-Ladeziele abgeglichen.
-  Laufzeit unverändert; gemeinsames Arbeitspaket EVMS-P0/P1.
-
 ## Unveröffentlicht
+
+## [0.7.1] — 23.10.2026
 
 ### Behoben — 23.10.2026
 
@@ -22,11 +19,18 @@ Datei angefasst wurde.
   Speicher nach rund 65 000 Abfragen „nicht verfügbar", bis die Integration neu geladen wurde.
   Die Anbindung läuft jetzt ohne Neuladen weiter.
 
+### Dokumentation — 21.10.2026
+
+- Dokumentation und HEMS-Vertragskopie für additive Watt-Ladeziele abgeglichen.
+  Laufzeit unverändert; gemeinsames Arbeitspaket EVMS-P0/P1.
+
 ### Dokumentation — 20.10.2026
 
 - Grundsatz der Skytech-Projekte in `contract/README.md` ergänzt: Jede Einheit, die anderen über
   Home Assistant etwas mitteilt, veröffentlicht dafür genau eine Entität
   `sensor.<einheit>_schnittstelle`. Liste aller Schnittstellen-Entitäten und der dokumentierten Ausnahmen nachgetragen; am Austausch mit SkytechHEMS ändert sich nichts.
+
+## [0.7.0] — 20.10.2026
 
 ### Geändert — 20.10.2026
 
