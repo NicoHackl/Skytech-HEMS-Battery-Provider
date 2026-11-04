@@ -121,8 +121,8 @@ Von diesem Projekt **genutzte** externe Endpunkte:
 | E3DC RSCP, TCP Ziel-IP:5033 (konfigurierbar), über `pye3dc` | `E3DC.poll()` (`EMS_REQ_BAT_SOC`, `EMS_REQ_POWER_BAT` u. a.) | SoC + Batterieleistung lesen (positiv = laden) | umgesetzt (D-015) |
 | E3DC RSCP | `EMS_REQ_SET_POWER` (`EMS_REQ_SET_POWER_MODE`, `EMS_REQ_SET_POWER_VALUE`) | Lade-/Entladeleistung schreiben, hält rund 10 s | umgesetzt, an Hardware zu bestätigen (D-015) |
 
-Timeout+Retry bei jedem Marstek-Aufruf: 3× à 1 s (E3DC: pye3dc-eigene 3 Wiederholungen, 5 s
-Socket-Timeout), danach `StorageAdapterError` → `UpdateFailed` →
+Timeout+Retry bei jedem Marstek-Aufruf: 3× à 3 s, im laufenden Aussetzer 1× à 3 s (D-021; E3DC:
+pye3dc-eigene 3 Wiederholungen, 5 s Socket-Timeout), danach `StorageAdapterError` → `UpdateFailed` →
 Entities `unavailable`, kein Crash (siehe [architektur.md](architektur.md)).
 
 Feldbedeutungen nicht hier duplizieren, sondern nach [datenmodell.md](datenmodell.md) verlinken.

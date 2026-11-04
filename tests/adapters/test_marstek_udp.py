@@ -599,3 +599,111 @@ async def test_dischrg_flag_false_sperrt_entladen(monkeypatch: pytest.MonkeyPatc
 
     assert state.discharge_allowed is False
     assert state.lock_reasons == ("geraet_entladen_gesperrt",)
+
+
+# Aussetzer seit Firmware V150 (D-021)
+
+
+def test_gesamtwartezeit_ueberbrueckt_den_telemetrie_upload_von_v150() -> None:
+    """Der Upload blockiert das Gerät rund 4 s; unter rund 8 s Wartezeit entstehen Fehler."""
+    assert marstek_udp._REQUEST_TIMEOUT_S * marstek_udp._REQUEST_RETRIES > 8
+
+
+async def test_kurzer_aussetzer_bleibt_ohne_fehler_und_wird_gemeldet(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Antwortet das Gerät erst auf einen späteren Versuch, scheitert der Poll nicht. Der Aussetzer
+    wird trotzdem einmal gemeldet, damit die HEMS-Anbindung ihren Sollwert erneuert."""
+    monkeypatch.setattr(marstek_udp, "_REQUEST_TIMEOUT_S", 0.02)
+    versuche = {"zahl": 0}
+
+    def responder(request: dict) -> dict | None:
+        if request["method"] == "ES.GetStatus":
+            versuche["zahl"] += 1
+            if versuche["zahl"] == 1:
+                return None
+        return {"id": request["id"], "src": "test", "result": {"bat_soc": 40}}
+
+    adapter = await _connected_adapter(monkeypatch, responder)
+
+    with caplog.at_level("INFO", logger=marstek_udp.__name__):
+        state = await adapter.read()
+        naechster = await adapter.read()
+
+    assert state.soc_percent == 40
+    assert state.communication_interrupted is True
+    assert naechster.communication_interrupted is False
+    assert "erst nach" in caplog.text
+
+
+async def test_normale_antwort_meldet_keinen_aussetzer(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = await _connected_adapter(monkeypatch, _status_responder({"bat_soc": 40}))
+
+    assert (await adapter.read()).communication_interrupted is False
+
+
+async def test_im_laufenden_aussetzer_sendet_jeder_aufruf_nur_einen_versuch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sonst stauen sich wartende Aufrufe hinter dem Lock zu Minuten, und das schweigende Gerät
+    bekäme weiter ganze Paketserien."""
+    monkeypatch.setattr(marstek_udp, "_REQUEST_TIMEOUT_S", 0.02)
+    monkeypatch.setattr(marstek_udp, "_RECONNECT_AFTER_FAILED_CALLS", 99)
+    adapter, transports = await _connected_adapter_with_transports(
+        monkeypatch, lambda _request: None
+    )
+
+    with pytest.raises(StorageAdapterError, match="3 Versuchen"):
+        await adapter.read()
+    assert len(transports[0].sent) == 3
+
+    with pytest.raises(StorageAdapterError, match="einem Versuch"):
+        await adapter.read()
+    assert len(transports[0].sent) == 4
+
+
+async def test_erste_antwort_beendet_den_aussetzer(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Danach gilt wieder die volle Wartezeit, und die Dauer des Aussetzers steht im Info-Log."""
+    monkeypatch.setattr(marstek_udp, "_REQUEST_TIMEOUT_S", 0.02)
+    antwortet = {"aktiv": False}
+
+    def responder(request: dict) -> dict | None:
+        if not antwortet["aktiv"]:
+            return None
+        return {"id": request["id"], "src": "test", "result": {"bat_soc": 33}}
+
+    adapter, transports = await _connected_adapter_with_transports(monkeypatch, responder)
+    with pytest.raises(StorageAdapterError):
+        await adapter.read()
+
+    antwortet["aktiv"] = True
+    with caplog.at_level("INFO", logger=marstek_udp.__name__):
+        state = await adapter.read()
+
+    assert state.communication_interrupted is True
+    assert "Aussetzer wieder" in caplog.text
+
+    antwortet["aktiv"] = False
+    gesendet = len(transports[0].sent)
+    with pytest.raises(StorageAdapterError, match="3 Versuchen"):
+        await adapter.read()
+    assert len(transports[0].sent) == gesendet + 3
+
+
+async def test_antwort_mit_fremder_id_landet_im_info_log(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Die Messung soll zeigen, ob das Gerät die `id` unter V150 anders zurückgibt."""
+    monkeypatch.setattr(marstek_udp, "_REQUEST_TIMEOUT_S", 0.02)
+    monkeypatch.setattr(marstek_udp, "_REQUEST_RETRIES", 1)
+    adapter = await _connected_adapter(
+        monkeypatch,
+        lambda request: {"id": request["id"] + 1, "src": "test", "result": {"bat_soc": 99}},
+    )
+
+    with caplog.at_level("INFO", logger=marstek_udp.__name__), pytest.raises(StorageAdapterError):
+        await adapter.read()
+
+    assert "fremder id 2" in caplog.text

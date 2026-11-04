@@ -17,6 +17,9 @@ class StorageState:
     liest, oder eine fehlgeschlagene Statusabfrage lässt sie auf `None` — „das Gerät sagt dazu
     nichts", nicht „gesperrt". `lock_reasons` nennt, *warum* das Gerät eine Richtung sperrt,
     als stabile Schlüssel (siehe docs/datenmodell.md), nie als Anzeigetext.
+
+    `communication_interrupted` (D-021): seit der letzten Abfrage lag ein Aussetzer, auch wenn diese
+    Abfrage selbst geklappt hat. Nur für die HEMS-Anbindung, die daraufhin ihren Sollwert erneuert.
     """
 
     soc_percent: float | None
@@ -30,3 +33,4 @@ class StorageState:
     temperature_c: float | None = None
     rated_capacity_wh: float | None = None
     raw_status: int | None = None
+    communication_interrupted: bool = False

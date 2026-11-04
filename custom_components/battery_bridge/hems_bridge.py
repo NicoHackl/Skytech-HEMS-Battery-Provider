@@ -63,6 +63,10 @@ Soll/Ist-Vergleich (D-019): Erlaubt der Adapter ihn (`response_check_supported`,
 jede Änderung von `sensor.hems_schnittstelle` den Vergleich in `response_check.py` fort — Soll ist
 `last_command`, Ist sind die HEMS-Istwerte dieses Präfixes. Eine Sperränderung stößt die
 Coordinator-Listener an, damit `interface.py` die Freigaben sofort neu veröffentlicht.
+
+Nach einem Aussetzer (D-021) ruft der Coordinator `async_resync()` auf: Der Marstek kann
+währenddessen den Passive-Mode verlassen haben und regelt dann bis zum nächsten Sollwert selbst.
+Ohne diesen Anstoß hielt das bis zum nächsten Keep-Alive an, also bis zu 60 s.
 """
 
 from __future__ import annotations
@@ -186,6 +190,15 @@ class HemsBridge:
         # die Betriebsart seit der Pause nicht geändert hat — während der Pause könnte die
         # inaktive Richtung manuell über number.<prefix>_soll_* verändert worden sein.
         self._last_applied_mode = None
+        await self._async_sync()
+
+    async def async_resync(self) -> None:
+        """Aktuelle HEMS-Anforderung nach einem Aussetzer sofort erneut senden (D-021).
+
+        Läuft bewusst über `_async_sync()`: Pause, Lebenszeichen und die aktuellen Helferwerte
+        gelten wie immer — es wird nie ein alter Sollwert wiederholt. Ohne Zero-Schritt, die
+        Betriebsart hat sich dadurch nicht geändert.
+        """
         await self._async_sync()
 
     async def async_setup(self) -> None:

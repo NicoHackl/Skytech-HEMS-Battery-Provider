@@ -11,6 +11,20 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Behoben — 04.11.2026
+
+- **Kurze Aussetzer des Marstek seit Firmware V150 unterbrechen die Ladung nicht mehr.** Antwortet
+  der Speicher einige Sekunden nicht, wartet die Anbindung bis zu 9 s, bevor er als nicht verfügbar
+  gilt. Ein echter Ausfall wird dadurch etwas später angezeigt.
+- **Nach einem Aussetzer bekommt der Marstek seinen Sollwert sofort wieder.** Bisher konnte er bis zu
+  60 s selbst regeln und zum Beispiel trotz Standby Leistung abgeben. Die Ursache der längeren
+  Aussetzer im Gerät behebt das nicht.
+
+### Geändert — 04.11.2026
+
+- Solange der Marstek nicht antwortet, prüft die Anbindung alle 10 s statt alle 30 s und sendet dabei
+  weniger Pakete. Das Info-Log zeigt jetzt langsame Antworten und die Dauer von Aussetzern.
+
 ## [0.7.1] — 23.10.2026
 
 ### Behoben — 23.10.2026

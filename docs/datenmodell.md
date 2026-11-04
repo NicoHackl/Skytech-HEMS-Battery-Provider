@@ -34,6 +34,7 @@ derselbe Entry bestehen, es entsteht kein doppelter.
 | `temperature_c` | `float \| None` | nein | Batterietemperatur in °C (Marstek `bat_temp`) |
 | `rated_capacity_wh` | `float \| None` | nein | Nennkapazität in Wh (Marstek `rated_capacity`) |
 | `raw_status` | `int \| None` | nein | Rohes Statusbitfeld des Geräts (E3DC `EMS_STATUS`), nur Diagnose |
+| `communication_interrupted` | `bool` | nein | Seit der letzten Abfrage lag ein Aussetzer (Marstek, D-021); intern für die HEMS-Anbindung, wird nirgends angezeigt |
 
 Herkunft der Gerätestatus-Felder je Adapter (höchstens alle `STATUS_POLL_INTERVAL` = 15 s gelesen):
 
