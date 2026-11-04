@@ -315,6 +315,32 @@ nachträglich nicht mehr trennen; der Neuaufbau aus D-013 bleibt als Absicherung
 (`_MAX_REQUEST_ID` in `adapters/marstek_udp.py`). Test:
 `test_request_id_bleibt_im_16_bit_bereich_des_geraets`.
 
+## Marstek setzt seit Firmware V150 regelmäßig aus (gemeldet 04.11.2026, teilweise entschärft)
+
+User-Beobachtung: Die Verbindung bricht immer wieder ab und kommt erneut, seit dem Update auf V150
+am 03.11.2026 (vermutlich kurz vor 17:00, Uhrzeit nicht sicher). Vorher höchstens 16
+Verbindungswarnungen vom 24.10. bis 03.11.2026 17:02, danach 252 in rund 17 Stunden.
+
+Belegt am 04.11.2026:
+
+- Ohne API-Verkehr keine Ereignisse in 45 min, nach dem Wiedereinschalten der erste Fehler nach 25 s.
+- Ohne `ES.SetMode` traten sie auch auf (3 in 8,4 min), 30-s-Poll senkte sie nur wenig.
+- Im Leerlauf zeigte der Shelly nach dem Fehler eine Rampe auf rund 500 W, dann 0 W. Bei laufender
+  Ladung fällt die Leistung nach rund 10 s auf 0 W, nach rund 23 s gibt der Speicher rund 150 W ab,
+  auch bei 72–100 % SoC und im Standby, bis ein neuer Sollwert ankommt.
+- Stromlos-Schalten half nur vorübergehend: 24 min ruhig, ab 13:20 wieder fast nur lange Ausfälle.
+- Um 12:50:17 brach die Leistung vor dem ersten gemeldeten Fehler ein.
+
+**Entschärft (D-021):** Kurze Aussetzer bleiben ohne Fehler, der Sollwert kommt nach einem Aussetzer
+sofort erneut. Wirkung an Hardware noch nicht gemessen. Ausführlich:
+[ADR D-021](adr/D-021-aussetzer-firmware-v150.md).
+
+**Offen:** Warum das Gerät bei den langen Ereignissen aussteigt und warum das ohne API-Verkehr
+ausblieb. Die Support-Anfrage an Marstek ist am 04.11.2026 gestellt. V150 als Ursache beruht nur auf
+dem zeitlichen Zusammenhang. Die Cloud war per App über Mobilfunk erreichbar, der in der
+Community-Analyse beschriebene Netzwerkchip-Reset ist damit unwahrscheinlicher, aber nicht
+ausgeschlossen.
+
 ## Stolpersteine
 
 Dinge, die schon einmal Zeit gekostet haben:

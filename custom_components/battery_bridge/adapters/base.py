@@ -39,6 +39,9 @@ class StorageAdapter(Protocol):
     # 300 s, E3DC nur rund 10 s.
     keepalive_interval: timedelta
 
+    # Poll-Takt, solange das Gerät nicht antwortet (coordinator.py, D-021).
+    failed_poll_interval: timedelta
+
     # Obergrenze der Soll-Leistungs-Entities (number.py) in W — geräteabhängig.
     max_power_w: int
 

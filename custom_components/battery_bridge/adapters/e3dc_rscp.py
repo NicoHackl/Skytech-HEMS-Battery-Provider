@@ -44,6 +44,7 @@ from typing import Any, TypeVar
 from e3dc import E3DC, AuthenticationError, RSCPKeyError
 
 from ..const import (
+    E3DC_FAILED_UPDATE_INTERVAL,
     E3DC_KEEPALIVE_INTERVAL,
     LOCK_CHARGE_DEVICE,
     LOCK_CHARGE_TIME,
@@ -89,6 +90,7 @@ class E3dcRscpAdapter:
     """`StorageAdapter`-Implementierung für E3DC-Hauskraftwerke (RSCP, lokal)."""
 
     keepalive_interval = E3DC_KEEPALIVE_INTERVAL
+    failed_poll_interval = E3DC_FAILED_UPDATE_INTERVAL
     # Kein Soll/Ist-Vergleich: der E3DC-Weg (EMS-Statusbits) ist noch nicht negativ getestet
     # (Entscheidung des Users, 19.10.2026).
     response_check_supported = False

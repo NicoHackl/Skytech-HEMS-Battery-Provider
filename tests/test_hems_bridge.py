@@ -681,3 +681,136 @@ async def test_ohne_hems_praefix_kein_lebenszeichen_sensor(
 ) -> None:
     _calls, entry = await _setup_entry(hass, monkeypatch, hems_entity_prefix=None)
     assert "hems_lebenszeichen" not in entity_ids_by_key(hass, entry)
+
+
+# Sollwert nach einem Aussetzer erneuern (D-021)
+
+
+def _poll_state(*, communication_interrupted: bool = False) -> StorageState:
+    return StorageState(
+        soc_percent=50,
+        charge_power_w=0,
+        discharge_power_w=0,
+        available=True,
+        last_update=datetime.now(UTC),
+        communication_interrupted=communication_interrupted,
+    )
+
+
+def _read_mit_einmaligem_aussetzer() -> AsyncMock:
+    """Wie der echte Adapter: die Meldung gilt für genau eine Abfrage. Der erneute Sollwert stößt
+    selbst wieder einen Poll an."""
+    meldungen = [True]
+
+    async def read() -> StorageState:
+        return _poll_state(communication_interrupted=bool(meldungen and meldungen.pop()))
+
+    return AsyncMock(side_effect=read)
+
+
+async def test_nach_gescheitertem_poll_kommt_der_sollwert_sofort_erneut(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Das Gerät kann im Aussetzer den Passive-Mode verlassen haben und regelt dann selbst. Die
+    erste Antwort muss deshalb den Sollwert auslösen, nicht erst der nächste Keep-Alive."""
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    read_mock = AsyncMock(side_effect=StorageAdapterError("Timeout"))
+    monkeypatch.setattr(MarstekUdpAdapter, "read", read_mock)
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert calls == []
+
+    read_mock.side_effect = None
+    read_mock.return_value = _poll_state()
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    # Kein Zero-Schritt: die Betriebsart hat sich nicht geändert.
+    assert calls == [("charge", 800.0)]
+
+
+async def test_langsame_antwort_erneuert_den_sollwert_nur_einmal(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Auch ein überbrückter Aussetzer kann den Passive-Mode beendet haben."""
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    monkeypatch.setattr(MarstekUdpAdapter, "read", _read_mit_einmaligem_aussetzer())
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert calls == [("charge", 800.0)]
+
+    calls.clear()
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert calls == []
+
+
+async def test_normaler_poll_sendet_keinen_sollwert(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    calls.clear()
+
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert calls == []
+
+
+async def test_pausierte_anbindung_sendet_nach_aussetzer_nichts(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Der Schalter hat Vorrang: manuell gesetzte Werte dürfen nicht überschrieben werden."""
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    await entry.runtime_data.hems_bridge.async_pause()
+    calls.clear()
+
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "read",
+        AsyncMock(return_value=_poll_state(communication_interrupted=True)),
+    )
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert calls == []
+
+
+async def test_aussetzer_erneuert_die_aktuelle_anforderung_nicht_den_alten_sollwert(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hat das HEMS im Aussetzer auf Standby gewechselt, gilt Standby, nicht die alte Ladung."""
+    calls, entry = await _setup_entry(hass, monkeypatch)
+    await _set_anforderung(hass, leistung_w="800", betriebsart="laden")
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=StorageAdapterError("boom")),
+    )
+    await _set_anforderung(hass, leistung_w="0", betriebsart="standby")
+    monkeypatch.setattr(
+        MarstekUdpAdapter,
+        "write_charge_power",
+        AsyncMock(side_effect=lambda watts: calls.append(("charge", watts))),
+    )
+    calls.clear()
+
+    monkeypatch.setattr(MarstekUdpAdapter, "read", _read_mit_einmaligem_aussetzer())
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert calls == [("charge", 0.0), ("discharge", 0.0)]
+
+
+def test_nur_der_marstek_fragt_im_aussetzer_schneller_ab() -> None:
+    """Der E3DC bekommt seinen Sollwert ohnehin alle 5 s, sein Takt bleibt unverändert."""
+    assert MarstekUdpAdapter.failed_poll_interval == timedelta(seconds=10)
+    assert E3dcRscpAdapter.failed_poll_interval == timedelta(seconds=30)

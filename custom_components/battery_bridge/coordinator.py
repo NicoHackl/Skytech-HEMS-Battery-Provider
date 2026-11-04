@@ -12,7 +12,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .adapters.base import StorageAdapter, StorageAdapterError
-from .const import DOMAIN, FAILED_UPDATE_INTERVAL
+from .const import DOMAIN
 from .models import StorageState
 
 if TYPE_CHECKING:
@@ -46,12 +46,14 @@ class BatteryBridgeCoordinator(DataUpdateCoordinator[StorageState]):
         )
         self.adapter = adapter
         # Normaltakt aus der ConfigEntry (CONF_UPDATE_INTERVAL, D-014) — merken, damit
-        # _async_update_data nach einer Fehlstrecke (FAILED_UPDATE_INTERVAL) wieder auf den
+        # _async_update_data nach einer Fehlstrecke (`adapter.failed_poll_interval`) wieder auf den
         # konfigurierten Wert zurückfindet statt auf einen globalen Fixwert.
         self._normal_update_interval = update_interval
         # Nur gesetzt, wenn der Entry ein HEMS-Präfix konfiguriert hat — siehe __init__.py und
         # hems_bridge.py (D-009). Ohne HEMS-Anbindung bleibt dieses Feld `None`.
         self.hems_bridge: HemsBridge | None = None
+        # Ob der letzte Poll scheiterte — der nächste erfolgreiche beendet den Aussetzer (D-021).
+        self._poll_failed = False
 
     async def _async_setup(self) -> None:
         """Verbindung einmalig vor dem ersten Poll aufbauen.
@@ -69,9 +71,20 @@ class BatteryBridgeCoordinator(DataUpdateCoordinator[StorageState]):
             state = await self.adapter.read()
         except StorageAdapterError as exc:
             # Antwortet das Gerät nicht, wird der Takt gestreckt statt unverändert weiterzulaufen
-            # (siehe FAILED_UPDATE_INTERVAL in const.py). `DataUpdateCoordinator` liest
-            # `update_interval` bei jeder Neuplanung frisch, ein Zuweisen genügt.
-            self.update_interval = FAILED_UPDATE_INTERVAL
+            # (`adapter.failed_poll_interval`). `DataUpdateCoordinator` liest `update_interval`
+            # bei jeder Neuplanung frisch, ein Zuweisen genügt.
+            self.update_interval = self.adapter.failed_poll_interval
+            self._poll_failed = True
             raise UpdateFailed(str(exc)) from exc
         self.update_interval = self._normal_update_interval
+        # Nach einem Aussetzer gilt der Sollwert am Gerät nicht mehr als gesichert (D-021). Der
+        # Sync läuft erst nach diesem Poll: er stößt selbst wieder einen Refresh an.
+        if (self._poll_failed or state.communication_interrupted) and self.hems_bridge is not None:
+            self.config_entry.async_create_task(
+                self.hass,
+                self.hems_bridge.async_resync(),
+                f"{DOMAIN} Sollwert nach Aussetzer",
+                eager_start=False,
+            )
+        self._poll_failed = False
         return state

@@ -40,6 +40,16 @@ Freigaben `None` — der Messwert-Poll scheitert deswegen nicht.
 **Befund 19.10.2026:** `dischrg_flag` blieb `true`, während das Gerät bei 12 % SoC jede Entladung
 verweigerte. Deshalb erlaubt dieser Adapter den Soll/Ist-Vergleich der HEMS-Anbindung
 (`response_check_supported`, `response_check.py`, D-018/D-019).
+
+Aussetzer seit Firmware V150 (D-021, Vorfall 03./04.11.2026): Das Gerät schweigt regelmäßig einige
+Sekunden. Ein Aufruf wartet deshalb über alle Versuche länger als 8 s, statt nach 3 s aufzugeben —
+kurze Aussetzer bleiben so ohne Fehler und ohne `unavailable`. Nach einem gescheiterten Aufruf
+reicht bis zur nächsten Antwort je Aufruf ein einzelner Versuch: wartende Aufrufe stauen sich nicht
+über Minuten, und ein Gerät, das gerade schweigt, bekommt keine Paketserien. Der Aussetzer wird
+über `StorageState.communication_interrupted` gemeldet, damit die HEMS-Anbindung ihren Sollwert
+sofort erneut sendet: Das Gerät kann währenddessen den Passive-Mode verlassen haben und regelt dann
+bis zum nächsten Sollwert selbst (am 04.11.2026 rund 154 W Abgabe trotz Standby). Für die Messung
+landen langsame Antworten, die Dauer eines Aussetzers und Antworten mit fremder `id` im Info-Log.
 """
 
 from __future__ import annotations
@@ -57,6 +67,7 @@ from ..const import (
     HEMS_KEEPALIVE_INTERVAL,
     LOCK_CHARGE_DEVICE,
     LOCK_DISCHARGE_DEVICE,
+    MARSTEK_FAILED_UPDATE_INTERVAL,
     STATUS_POLL_INTERVAL,
 )
 from ..models import StorageState
@@ -67,7 +78,9 @@ _LOGGER = logging.getLogger(__name__)
 _METHOD_ES_GET_STATUS = "ES.GetStatus"
 _METHOD_BAT_GET_STATUS = "Bat.GetStatus"
 _METHOD_ES_SET_MODE = "ES.SetMode"
-_REQUEST_TIMEOUT_S = 1.0
+# 3 Versuche à 3 s = 9 s Gesamtwartezeit. Unter rund 8 s löst schon der ca. 4 s lange
+# Telemetrie-Upload von Firmware V150 Fehler aus (D-021); eine normale Antwort kommt weiter sofort.
+_REQUEST_TIMEOUT_S = 3.0
 # Das Gerät führt die Request-ID nur als 16-Bit-Wert: auf `id` 65536 antwortet es mit `id` 0, auf
 # 70000 mit 4464 (am 23.10.2026 am Venus E 3.0 nachgemessen). Ein ungebremst hochzählender Zähler
 # passt ab 65536 nie mehr zur Antwort — jede Antwort würde als fremd verworfen, bis die
@@ -75,10 +88,11 @@ _REQUEST_TIMEOUT_S = 1.0
 _MAX_REQUEST_ID = 0xFFFF
 _REQUEST_RETRIES = 3
 # Nach so vielen aufeinanderfolgend erfolglosen Aufrufen wird der UDP-Transport verworfen und beim
-# nächsten Aufruf neu aufgebaut (siehe Moduldoc). Ein erfolgloser Aufruf dauert bereits
-# `_REQUEST_RETRIES` × `_REQUEST_TIMEOUT_S`; zwei davon hintereinander sind damit wenige Sekunden —
-# träge genug, dass ein einzelnes verlorenes Paket nicht sofort einen neuen Socket erzwingt, und
-# schnell genug, um weit unter dem 300-s-Watchdog des Passive-Mode zu bleiben.
+# nächsten Aufruf neu aufgebaut (siehe Moduldoc). Der erste erfolglose Aufruf dauert
+# `_REQUEST_RETRIES` × `_REQUEST_TIMEOUT_S`, jeder weitere im selben Aussetzer einen Versuch
+# (D-021). Zwei davon hintereinander sind damit wenige Sekunden — träge genug, dass ein einzelnes
+# verlorenes Paket nicht sofort einen neuen Socket erzwingt, und schnell genug, um weit unter dem
+# 300-s-Watchdog des Passive-Mode zu bleiben.
 _RECONNECT_AFTER_FAILED_CALLS = 2
 # Sicherheits-Watchdog für den Passive-Mode-Sollwert (siehe Moduldoc) — Default von
 # leonscheltema/ha-marstek übernommen, dort ebenfalls der Standardwert der Entity.
@@ -133,6 +147,7 @@ class MarstekUdpAdapter:
     """`StorageAdapter`-Implementierung für die Marstek Local API (UDP JSON-RPC)."""
 
     keepalive_interval = HEMS_KEEPALIVE_INTERVAL
+    failed_poll_interval = MARSTEK_FAILED_UPDATE_INTERVAL
     max_power_w = _MAX_POWER_W
     # Der Marstek meldet eine Entladesperre nicht selbst (Befund 19.10.2026): die HEMS-Anbindung
     # prüft deshalb Soll gegen Ist (response_check.py, D-018/D-019).
@@ -167,6 +182,10 @@ class MarstekUdpAdapter:
         # Ob der Neuaufbau in der laufenden Ausfallphase schon gemeldet wurde, siehe
         # `_log_reconnect()`.
         self._reconnect_logged = False
+        # Laufender Aussetzer (D-021): seit wann (Uhr der Event-Loop), `None` = das Gerät antwortet.
+        self._silent_since: float | None = None
+        # Ob seit dem letzten `read()` ein Aussetzer lag — geht in `StorageState` (D-021).
+        self._communication_interrupted = False
         # Gerätestatus aus `Bat.GetStatus` und wann er zuletzt abgefragt wurde (monotone Uhr), siehe
         # Moduldoc. Auch ein Fehlschlag zählt als Abfrage: ein Gerät, das die Methode nicht
         # beantwortet, wird so nicht in jedem Poll erneut drei Sekunden lang angefragt.
@@ -192,6 +211,8 @@ class MarstekUdpAdapter:
         self._connected = False
         self._failed_calls = 0
         self._reconnect_logged = False
+        self._silent_since = None
+        self._communication_interrupted = False
 
     def _close_transport(self) -> None:
         """Nur den Transport wegwerfen — der Adapter gilt weiterhin als verbunden.
@@ -264,6 +285,8 @@ class MarstekUdpAdapter:
             fallback_bat_power = -ongrid_power if ongrid_power is not None else None
             charge_power_w, discharge_power_w = _split_bat_power(fallback_bat_power)
         device_status = await self._read_device_status()
+        communication_interrupted = self._communication_interrupted
+        self._communication_interrupted = False
         return StorageState(
             soc_percent=_as_float(result.get("bat_soc")),
             charge_power_w=charge_power_w,
@@ -275,6 +298,7 @@ class MarstekUdpAdapter:
             lock_reasons=device_status.lock_reasons,
             temperature_c=device_status.temperature_c,
             rated_capacity_wh=device_status.rated_capacity_wh,
+            communication_interrupted=communication_interrupted,
         )
 
     async def _read_device_status(self) -> _DeviceStatus:
@@ -369,15 +393,20 @@ class MarstekUdpAdapter:
         payload = json.dumps({"id": request_id, "method": method, "params": params}).encode()
         loop = asyncio.get_running_loop()
         last_error: Exception | None = None
+        started = loop.time()
+        # Im laufenden Aussetzer genügt ein Versuch, sonst stauen sich wartende Aufrufe (D-021).
+        attempts = 1 if self._silent_since is not None else _REQUEST_RETRIES
 
-        for attempt in range(1, _REQUEST_RETRIES + 1):
+        for attempt in range(1, attempts + 1):
             self._transport.sendto(payload)
             deadline = loop.time() + _REQUEST_TIMEOUT_S
 
             while True:
                 remaining = deadline - loop.time()
                 if remaining <= 0:
-                    last_error = TimeoutError(f"Keine Antwort auf {method} innerhalb 1 s")
+                    last_error = TimeoutError(
+                        f"Keine Antwort auf {method} innerhalb {_REQUEST_TIMEOUT_S:g} s"
+                    )
                     break
                 try:
                     data = await asyncio.wait_for(self._protocol.queue.get(), timeout=remaining)
@@ -391,13 +420,20 @@ class MarstekUdpAdapter:
                     continue  # unlesbares Paket, ohne Retry weiter auf die echte Antwort warten
 
                 if response.get("id") != request_id:
-                    continue  # verspätete Antwort auf einen älteren Request, verwerfen
+                    # Verspätete Antwort auf einen älteren Request, verwerfen. Das Info-Log zeigt,
+                    # ob das Gerät die `id` unter V150 anders zurückgibt (D-021).
+                    _LOGGER.info(
+                        "Marstek %s:%s: Antwort mit fremder id %r auf %s (erwartet %s) verworfen",
+                        self._host, self._port, response.get("id"), method, request_id,
+                    )
+                    continue
 
                 # Ab hier hat das Gerät nachweislich geantwortet — auch eine Fehlerantwort ist
                 # ein Lebenszeichen des Transports. Damit endet die Ausfallphase: Zähler und
                 # Melde-Sperre gehören zurückgesetzt.
                 self._failed_calls = 0
                 self._reconnect_logged = False
+                self._note_reply(method, attempt, loop.time(), started)
                 if "result" not in response:
                     raise StorageAdapterError(
                         f"Marstek-Gerät meldet einen Fehler auf {method}: {response!r}"
@@ -406,9 +442,12 @@ class MarstekUdpAdapter:
 
             _LOGGER.debug(
                 "Marstek %s:%s antwortet nicht auf %s (Versuch %s/%s)",
-                self._host, self._port, method, attempt, _REQUEST_RETRIES,
+                self._host, self._port, method, attempt, attempts,
             )
 
+        if self._silent_since is None:
+            self._silent_since = started
+        self._communication_interrupted = True
         self._failed_calls += 1
         if self._failed_calls >= _RECONNECT_AFTER_FAILED_CALLS:
             self._log_reconnect(
@@ -417,10 +456,26 @@ class MarstekUdpAdapter:
             self._close_transport()
             self._failed_calls = 0
 
+        versuche = "einem Versuch" if attempts == 1 else f"{attempts} Versuchen"
         raise StorageAdapterError(
-            f"Marstek {self._host}:{self._port} antwortet nach {_REQUEST_RETRIES} Versuchen "
-            f"nicht auf {method}."
+            f"Marstek {self._host}:{self._port} antwortet nach {versuche} nicht auf {method}."
         ) from last_error
+
+    def _note_reply(self, method: str, attempt: int, now: float, started: float) -> None:
+        """Aussetzer nach einer Antwort festhalten und fürs Info-Log messen (D-021)."""
+        if attempt > 1:
+            self._communication_interrupted = True
+            _LOGGER.info(
+                "Marstek %s:%s antwortet auf %s erst nach %.1f s (Versuch %s)",
+                self._host, self._port, method, now - started, attempt,
+            )
+        if self._silent_since is not None:
+            self._communication_interrupted = True
+            _LOGGER.info(
+                "Marstek %s:%s antwortet nach %.1f s Aussetzer wieder",
+                self._host, self._port, now - self._silent_since,
+            )
+            self._silent_since = None
 
 
 def _as_float(value: Any) -> float | None:

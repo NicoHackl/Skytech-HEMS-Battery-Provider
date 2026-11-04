@@ -55,11 +55,15 @@ DEFAULT_UPDATE_INTERVAL_SECONDS: Final = 5
 MIN_UPDATE_INTERVAL_SECONDS: Final = 1
 MAX_UPDATE_INTERVAL_SECONDS: Final = 60
 
-# Poll-Takt, solange das Gerät nicht antwortet (coordinator.py). Ein Speicher, der gerade nicht
-# antwortet, wird nicht weiter im Normaltakt mit je drei Versuchen beschickt — das hilft niemandem
-# und belastet den Netzwerkteil des Geräts weiter. Bleibt weit unter dem 300-s-Watchdog des
-# Passive-Mode, ein erholtes Gerät wird also spätestens eine halbe Minute später wieder erkannt.
-FAILED_UPDATE_INTERVAL: Final = timedelta(seconds=30)
+# Poll-Takt des Marstek, solange er nicht antwortet (coordinator.py, D-021). Im Aussetzer sendet
+# jeder Poll nur noch einen Versuch; das erholte Gerät wird nach spätestens 10 s erkannt und
+# bekommt dann sofort wieder seinen Sollwert, statt bis zu 30 s selbst weiterzuregeln.
+MARSTEK_FAILED_UPDATE_INTERVAL: Final = timedelta(seconds=10)
+
+# Poll-Takt des E3DC, solange er nicht antwortet (coordinator.py). Ein Speicher, der gerade nicht
+# antwortet, wird nicht weiter im Normaltakt beschickt. Der E3DC bekommt seinen Sollwert ohnehin
+# alle 5 s, ein schnelleres Erkennen brächte hier nichts.
+E3DC_FAILED_UPDATE_INTERVAL: Final = timedelta(seconds=30)
 
 # Keep-Alive-Takt der HEMS-Anbindung für Marstek (hems_bridge.py, D-012) — seit D-015 liefert
 # jeder Adapter seinen eigenen Takt (`StorageAdapter.keepalive_interval`). Deutlich unter dem

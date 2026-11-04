@@ -91,8 +91,10 @@ Transport deshalb selbst instand: er prüft vor jedem Aufruf, ob der Socket noch
 ihn zusätzlich nach mehreren erfolglosen Aufrufen hintereinander, sodass der nächste Aufruf einen
 frischen erzeugt. Ohne das blieb ein einmal gestorbener UDP-Socket bis zum manuellen Neuladen tot
 (96 Minuten am 10.09.2026, siehe [bekannte-luecken.md](bekannte-luecken.md)). Solange das Gerät
-nicht antwortet, streckt der Coordinator zusätzlich seinen Takt vom konfigurierten Normaltakt auf
-`FAILED_UPDATE_INTERVAL` (`const.py`), statt unverändert weiterzupollen.
+nicht antwortet, wechselt der Coordinator vom konfigurierten Normaltakt auf
+`adapter.failed_poll_interval` (Marstek 10 s, E3DC 30 s). Nach einem Aussetzer ruft er
+`HemsBridge.async_resync()` auf, damit die aktuelle Anforderung sofort wieder am Gerät anliegt
+([D-021](adr/D-021-aussetzer-firmware-v150.md)).
 
 Der Schreibpfad läuft ohne Umweg über den Coordinator: `number.py` ruft bei jeder Wertänderung
 direkt `adapter.write_charge_power()`/`write_discharge_power()` auf, meldet einen Fehlschlag als
