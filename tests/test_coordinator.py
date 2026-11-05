@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 
 from custom_components.battery_bridge.adapters.base import StorageAdapterError
@@ -134,3 +134,30 @@ async def test_poll_intervall_wechselt_bei_fehler_und_kehrt_bei_erfolg_zurueck(
     await hass.async_block_till_done()
     assert entry.runtime_data.update_interval == configured_interval
 
+
+async def test_ha_stopp_gibt_das_geraet_frei_und_beendet_die_hems_anbindung(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Home Assistant entlädt beim Stopp keine Entries. Ein Marstek über Modbus hielte seinen
+    Sollwert sonst unbegrenzt (D-022)."""
+    state = StorageState(
+        soc_percent=10,
+        charge_power_w=0,
+        discharge_power_w=0,
+        available=True,
+        last_update=datetime.now(UTC),
+    )
+    close_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(MarstekUdpAdapter, "connect", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekUdpAdapter, "read", AsyncMock(return_value=state))
+    monkeypatch.setattr(MarstekUdpAdapter, "close", close_mock)
+
+    entry = make_marstek_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await hass.async_block_till_done()
+
+    close_mock.assert_awaited_once()

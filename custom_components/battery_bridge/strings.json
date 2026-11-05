@@ -3,18 +3,29 @@
     "step": {
       "user": {
         "title": "Batteriespeicher hinzufügen",
-        "description": "Hersteller des Speichers wählen.",
+        "description": "Speicher und Anbindung wählen.",
         "data": {
-          "manufacturer": "Hersteller"
+          "manufacturer": "Speicher"
         }
       },
       "marstek_udp": {
-        "title": "Marstek — Verbindung",
+        "title": "Marstek (UDP) — Verbindung",
         "description": "Verbindungsdaten des Speichers im lokalen Netzwerk.",
         "data": {
           "display_name": "Anzeigename (optional)",
           "host": "IP-Adresse",
           "port": "UDP-Port",
+          "hems_entity_prefix": "SkytechHEMS-Präfix (optional, z. B. \"acspeicher1\") — bindet diesen Speicher direkt an SkytechHEMS an. Leer lassen, wenn er nicht von SkytechHEMS gesteuert wird.",
+          "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)"
+        }
+      },
+      "marstek_modbus": {
+        "title": "Marstek (Modbus) — Verbindung",
+        "description": "Verbindungsdaten des Speichers im lokalen Netzwerk. Nur eine Anwendung darf den Speicher über Modbus ansprechen: Eine andere Modbus-Integration für diesen Speicher vorher entfernen. Sobald diese Anbindung steuert, regelt der Speicher nicht mehr selbst.",
+        "data": {
+          "display_name": "Anzeigename (optional)",
+          "host": "IP-Adresse",
+          "port": "Modbus-Port",
           "hems_entity_prefix": "SkytechHEMS-Präfix (optional, z. B. \"acspeicher1\") — bindet diesen Speicher direkt an SkytechHEMS an. Leer lassen, wenn er nicht von SkytechHEMS gesteuert wird.",
           "update_interval_seconds": "Abfrageintervall (Sekunden, 1–60)"
         }

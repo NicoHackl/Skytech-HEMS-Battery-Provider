@@ -14,7 +14,7 @@ ruff check .
 
 Installation über HACS (custom repository) oder manuell nach `custom_components/battery_bridge`
 kopieren, Home Assistant neu starten. Danach in **Einstellungen → Geräte & Dienste → Integration
-hinzufügen** nach „Skytech HEMS Battery Provider" suchen, Hersteller wählen (aktuell Marstek oder E3DC), Verbindungsdaten
+hinzufügen** nach „Skytech HEMS Battery Provider" suchen, Speicher wählen (Marstek über UDP oder Modbus, E3DC), Verbindungsdaten
 eingeben. Pro physischem Speicher wird der Vorgang einmal wiederholt. Die entstehenden Entities
 (SoC, Ist-/Soll-Lade-/Entladeleistung — Details: [docs/api-referenz.md](docs/api-referenz.md))
 lassen sich wie jede andere HA-Entity in Dashboards, Automationen oder als Quelle für

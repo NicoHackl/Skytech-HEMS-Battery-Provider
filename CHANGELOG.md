@@ -11,6 +11,14 @@ Datei angefasst wurde.
 
 ## Unveröffentlicht
 
+### Hinzugefügt — 05.11.2026
+
+- **Der Marstek lässt sich jetzt auch über Modbus anbinden.** Bei der Einrichtung stehen „Marstek
+  (UDP)“ und „Marstek (Modbus)“ zur Wahl. Entitäten und HEMS-Anbindung sind dieselben, bestehende
+  Einträge laufen unverändert weiter. An der Anlage noch nicht abgenommen.
+- Beim Beenden von Home Assistant und beim Entladen des Eintrags geht ein über Modbus gesteuerter
+  Marstek auf Standby. Er würde seinen Sollwert sonst unbegrenzt halten.
+
 ### Behoben — 04.11.2026
 
 - **Kurze Aussetzer des Marstek seit Firmware V150 unterbrechen die Ladung nicht mehr.** Antwortet

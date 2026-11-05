@@ -23,7 +23,7 @@ Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (aktue
 | Schicht | Technologie | Warum |
 |---|---|---|
 | Sprache / Laufzeit | Python 3.13+, Home Assistant Custom Component, `asyncio` | Von aktuellem HA-Core/`pytest-homeassistant-custom-component` vorausgesetzt — Plan nannte 3.11, siehe [bekannte-luecken.md](bekannte-luecken.md) |
-| Transport (Marstek) | UDP JSON-RPC, Port 30000 | Offizielle lokale Open-API, geringerer Overhead als Modbus TCP, kein Firmware-Mindeststand nötig — siehe D-007 |
+| Transport (Marstek) | UDP JSON-RPC, Port 30000, oder Modbus TCP, Port 502 | UDP: lokale Open-API (D-007). Modbus: stabiler seit Firmware V150, eigener Client ohne Abhängigkeit (D-022) |
 | Transport (E3DC) | RSCP (TCP, Port 5033, verschlüsselt) über `pye3dc`, synchron im Executor | Derselbe Weg, über den die Steuerung vorher per pyscript lief; Lesen und Schreiben über eine Sitzung — siehe D-015 |
 | Persistenz | Keine eigene — HA-State/Config-Entries | Nicht-Ziel, siehe oben |
 | Schnittstelle | HA-Entities (`sensor`, `number`) je Speicher-Instanz | Einzige öffentliche Schnittstelle dieses Projekts, siehe [api-referenz.md](api-referenz.md) |
@@ -172,6 +172,7 @@ custom_components/battery_bridge/
 │   ├── __init__.py
 │   ├── base.py                     # StorageAdapter-Protocol, StorageAdapterError(+AuthError)
 │   ├── marstek_udp.py               # Marstek Local API, UDP JSON-RPC Port 30000 — Lesen+Schreiben
+│   ├── marstek_modbus.py            # Marstek Modbus TCP Port 502 — Lesen+Schreiben (D-022)
 │   └── e3dc_rscp.py                 # E3DC-Hauskraftwerk, RSCP über pye3dc — Lesen+Schreiben (D-015)
 ├── sensor.py                        # SoC-%, Ist-Ladeleistung-W, Ist-Entladeleistung-W,
 │                                     #   optional: HEMS-Soll-Lade-/Entladeleistung-W (D-010)
@@ -184,6 +185,7 @@ custom_components/battery_bridge/
 
 tests/
 ├── adapters/test_marstek_udp.py   # gegen gemockten Transport, kein echter Socket
+├── adapters/test_marstek_modbus.py # gegen gemockte TCP-Verbindung, kein echter Socket
 ├── adapters/test_e3dc_rscp.py     # gegen ein Fake-pye3dc-Objekt, kein echter Socket
 ├── test_coordinator.py             # gegen den echten HA-Testkern (hass-Fixture)
 ├── test_config_flow.py              # ebenso

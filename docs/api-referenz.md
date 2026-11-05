@@ -118,10 +118,13 @@ Von diesem Projekt **genutzte** externe Endpunkte:
 | Marstek Local API | `Bat.GetStatus` | Detaillierterer Batteriestatus (Temperatur, Kapazität) — von dieser Integration bisher nicht genutzt | nicht genutzt |
 | Marstek Local API | `ES.SetMode` (Passive-Mode) | Lade-/Entladeleistung schreiben, `power` + `cd_time`-Watchdog | umgesetzt, unverifiziert an Hardware (M2) |
 | Marstek Local API | `Marstek.GetDevice` | Geräte-Discovery per UDP-Broadcast | nicht umgesetzt, siehe [roadmap.md](roadmap.md) |
+| Marstek Modbus TCP, Ziel-IP:502 (konfigurierbar), Unit 1 | FC03 auf 34002, 30006, 42000, 42010 | SoC, AC-Leistung, Freigabe und Modus lesen | umgesetzt, an Hardware abzunehmen (D-022) |
+| Marstek Modbus TCP | FC06 auf 42000, 42010, 42020, 42021 | Freigabe, Modus und Leistung schreiben | umgesetzt, an Hardware abzunehmen (D-022) |
 | E3DC RSCP, TCP Ziel-IP:5033 (konfigurierbar), über `pye3dc` | `E3DC.poll()` (`EMS_REQ_BAT_SOC`, `EMS_REQ_POWER_BAT` u. a.) | SoC + Batterieleistung lesen (positiv = laden) | umgesetzt (D-015) |
 | E3DC RSCP | `EMS_REQ_SET_POWER` (`EMS_REQ_SET_POWER_MODE`, `EMS_REQ_SET_POWER_VALUE`) | Lade-/Entladeleistung schreiben, hält rund 10 s | umgesetzt, an Hardware zu bestätigen (D-015) |
 
-Timeout+Retry bei jedem Marstek-Aufruf: 3× à 3 s, im laufenden Aussetzer 1× à 3 s (D-021; E3DC:
+Timeout+Retry bei jedem Marstek-Aufruf: UDP 3× à 3 s, im laufenden Aussetzer 1× à 3 s (D-021);
+Modbus 2× à 6 s, im laufenden Aussetzer 1× à 6 s (D-022; E3DC:
 pye3dc-eigene 3 Wiederholungen, 5 s Socket-Timeout), danach `StorageAdapterError` → `UpdateFailed` →
 Entities `unavailable`, kein Crash (siehe [architektur.md](architektur.md)).
 

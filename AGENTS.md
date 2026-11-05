@@ -8,7 +8,7 @@
 
 Home-Assistant-Integration, die Batteriespeicher verschiedener Hersteller (aktuell Marstek und E3DC) einheitlich als normalisierte HA-Entitäten bereitstellt: Ist-SoC und Ist-Lade-/Entladeleistung lesen, Soll-Lade-/Entladeleistung schreiben. Brücke zwischen Herstelleranbindung und generischen Verbrauchern wie SkytechHEMS.
 
-Tech-Stack: Python 3.13+, Home Assistant Custom Component, asyncio (UDP JSON-RPC für Marstek, RSCP über pye3dc für E3DC, aiohttp für künftige HTTP-Adapter), pytest, ruff
+Tech-Stack: Python 3.13+, Home Assistant Custom Component, asyncio (UDP JSON-RPC oder Modbus TCP für Marstek, RSCP über pye3dc für E3DC, aiohttp für künftige HTTP-Adapter), pytest, ruff
 
 ## Präzedenz bei Widersprüchen
 

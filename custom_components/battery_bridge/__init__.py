@@ -4,12 +4,20 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_PORT,
+    CONF_USERNAME,
+    EVENT_HOMEASSISTANT_STOP,
+    Platform,
+)
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
 from .adapters.base import StorageAdapter
 from .adapters.e3dc_rscp import E3dcRscpAdapter
+from .adapters.marstek_modbus import MarstekModbusAdapter
 from .adapters.marstek_udp import MarstekUdpAdapter
 from .const import (
     CONF_HEMS_ENTITY_PREFIX,
@@ -29,6 +37,7 @@ from .const import (
     MANUFACTURER_E3DC,
     MANUFACTURER_MARSTEK,
     PROTOCOL_E3DC_RSCP,
+    PROTOCOL_MARSTEK_MODBUS,
     PROTOCOL_MARSTEK_UDP,
 )
 from .coordinator import BatteryBridgeConfigEntry, BatteryBridgeCoordinator
@@ -71,8 +80,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: BatteryBridgeConfigEntry
 
     entry.runtime_data = coordinator
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    entry.async_on_unload(_async_release_device_on_stop(hass, coordinator))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+@callback
+def _async_release_device_on_stop(
+    hass: HomeAssistant, coordinator: BatteryBridgeCoordinator
+) -> CALLBACK_TYPE:
+    """Beim HA-Stopp den Adapter schließen, denn Home Assistant entlädt dabei keine Entries.
+
+    Ein Marstek über Modbus hält seinen Sollwert sonst unbegrenzt (D-022). Die HEMS-Anbindung endet
+    zuerst, damit sie danach nichts mehr schreibt.
+    """
+
+    async def _async_stop(_event: Event) -> None:
+        if coordinator.hems_bridge is not None:
+            coordinator.hems_bridge.async_unload()
+        await coordinator.adapter.close()
+
+    return hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop)
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: BatteryBridgeConfigEntry) -> None:
@@ -103,6 +131,8 @@ def _build_adapter(entry: BatteryBridgeConfigEntry) -> StorageAdapter:
     protocol = entry.data[CONF_PROTOCOL]
     if manufacturer == MANUFACTURER_MARSTEK and protocol == PROTOCOL_MARSTEK_UDP:
         return MarstekUdpAdapter(entry.data[CONF_HOST], entry.data[CONF_PORT])
+    if manufacturer == MANUFACTURER_MARSTEK and protocol == PROTOCOL_MARSTEK_MODBUS:
+        return MarstekModbusAdapter(entry.data[CONF_HOST], entry.data[CONF_PORT])
     if manufacturer == MANUFACTURER_E3DC and protocol == PROTOCOL_E3DC_RSCP:
         return E3dcRscpAdapter(
             entry.data[CONF_HOST],

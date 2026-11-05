@@ -24,8 +24,11 @@ from homeassistant.helpers.selector import (
 
 from .adapters.base import StorageAdapterAuthError, StorageAdapterError
 from .adapters.e3dc_rscp import E3dcRscpAdapter
+from .adapters.marstek_modbus import MarstekModbusAdapter
 from .adapters.marstek_udp import MarstekUdpAdapter
 from .const import (
+    ADAPTER_CHOICES,
+    CHOICE_MARSTEK_MODBUS,
     CONF_DISPLAY_NAME,
     CONF_HEMS_ENTITY_PREFIX,
     CONF_HEMS_TIMEOUT_FACTOR,
@@ -44,7 +47,7 @@ from .const import (
     E3DC_RSCP_DEFAULT_PORT,
     MANUFACTURER_E3DC,
     MANUFACTURER_MARSTEK,
-    MANUFACTURER_NAMES,
+    MARSTEK_MODBUS_DEFAULT_PORT,
     MARSTEK_UDP_DEFAULT_PORT,
     MAX_RESPONSE_CHECK_MAX_ACTUAL_W,
     MAX_RESPONSE_CHECK_MIN_REQUEST_W,
@@ -55,6 +58,7 @@ from .const import (
     MIN_RESPONSE_CHECK_TIME_SECONDS,
     MIN_UPDATE_INTERVAL_SECONDS,
     PROTOCOL_E3DC_RSCP,
+    PROTOCOL_MARSTEK_MODBUS,
     PROTOCOL_MARSTEK_UDP,
 )
 from .heartbeat import DEFAULT_TIMEOUT_FACTOR, MAX_TIMEOUT_FACTOR, MIN_TIMEOUT_FACTOR
@@ -133,15 +137,14 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Schritt 1: Hersteller wählen."""
+        """Schritt 1: Speicher und Anbindung wählen (D-022)."""
         if user_input is not None:
-            manufacturer = user_input[CONF_MANUFACTURER]
-            # Jeder Hersteller hat bisher genau ein Protokoll — der Protokoll-Auswahlschritt
-            # entfällt (Plan Abschnitt 6). Ein zweites Protokoll für einen bestehenden Hersteller
-            # (D-006) braucht hier einen echten Auswahlschritt.
-            if manufacturer == MANUFACTURER_MARSTEK:
+            choice = user_input[CONF_MANUFACTURER]
+            if choice == MANUFACTURER_MARSTEK:
                 return await self.async_step_marstek_udp()
-            if manufacturer == MANUFACTURER_E3DC:
+            if choice == CHOICE_MARSTEK_MODBUS:
+                return await self.async_step_marstek_modbus()
+            if choice == MANUFACTURER_E3DC:
                 return await self.async_step_e3dc_rscp()
 
         return self.async_show_form(
@@ -152,7 +155,7 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
                         SelectSelectorConfig(
                             options=[
                                 SelectOptionDict(value=key, label=label)
-                                for key, label in MANUFACTURER_NAMES.items()
+                                for key, label in ADAPTER_CHOICES.items()
                             ]
                         )
                     ),
@@ -164,6 +167,35 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Schritt 2 (Marstek/UDP): Verbindungsdaten, Verbindungstest, Entry anlegen."""
+        return await self._async_step_marstek(
+            "marstek_udp",
+            MarstekUdpAdapter,
+            PROTOCOL_MARSTEK_UDP,
+            MARSTEK_UDP_DEFAULT_PORT,
+            user_input,
+        )
+
+    async def async_step_marstek_modbus(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Schritt 2 (Marstek/Modbus): wie UDP, nur anderer Adapter und Port (D-022)."""
+        return await self._async_step_marstek(
+            "marstek_modbus",
+            MarstekModbusAdapter,
+            PROTOCOL_MARSTEK_MODBUS,
+            MARSTEK_MODBUS_DEFAULT_PORT,
+            user_input,
+        )
+
+    async def _async_step_marstek(
+        self,
+        step_id: str,
+        adapter_class: type[MarstekUdpAdapter] | type[MarstekModbusAdapter],
+        protocol: str,
+        default_port: int,
+        user_input: dict[str, Any] | None,
+    ) -> ConfigFlowResult:
+        """Formular und Verbindungstest, gemeinsam für beide Marstek-Anbindungen."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -175,7 +207,7 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(f"{host}:{port}")
                 self._abort_if_unique_id_configured()
 
-                adapter = MarstekUdpAdapter(host, port)
+                adapter = adapter_class(host, port)
                 try:
                     await adapter.connect()
                     await adapter.read()
@@ -188,7 +220,7 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
                         title=display_name,
                         data={
                             CONF_MANUFACTURER: MANUFACTURER_MARSTEK,
-                            CONF_PROTOCOL: PROTOCOL_MARSTEK_UDP,
+                            CONF_PROTOCOL: protocol,
                             CONF_HOST: host,
                             CONF_PORT: port,
                             CONF_HEMS_ENTITY_PREFIX: user_input.get(CONF_HEMS_ENTITY_PREFIX)
@@ -200,12 +232,12 @@ class BatteryBridgeConfigFlow(ConfigFlow, domain=DOMAIN):
                     await adapter.close()
 
         return self.async_show_form(
-            step_id="marstek_udp",
+            step_id=step_id,
             data_schema=vol.Schema(
                 {
                     vol.Optional(CONF_DISPLAY_NAME): str,
                     vol.Required(CONF_HOST): str,
-                    vol.Required(CONF_PORT, default=MARSTEK_UDP_DEFAULT_PORT): int,
+                    vol.Required(CONF_PORT, default=default_port): int,
                     vol.Optional(CONF_HEMS_ENTITY_PREFIX): str,
                     vol.Optional(
                         CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL_SECONDS

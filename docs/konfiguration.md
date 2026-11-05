@@ -59,9 +59,14 @@ gefallen); das ist bewusst kein Parameter (Entscheidung des Users, 19.10.2026).
 | Hersteller | Felder | Default |
 |---|---|---|
 | Marstek (UDP) | Anzeigename, IP-Adresse, UDP-Port, HEMS-Präfix, Abfrageintervall | Port 30000, 5 s |
+| Marstek (Modbus) | Anzeigename, IP-Adresse, Modbus-Port, HEMS-Präfix, Abfrageintervall | Port 502, 5 s |
 | E3DC (RSCP) | Anzeigename, IP-Adresse, Port, E3DC-Benutzername, E3DC-Passwort, RSCP-Schlüssel, HEMS-Präfix, Abfrageintervall | Port 5033, 5 s |
 
 HEMS-Keep-Alive-Takt (nicht konfigurierbar, geräteabhängig): Marstek 60 s, E3DC 5 s (D-015).
+
+Marstek (Modbus): Nur eine Anwendung darf den Speicher über Modbus ansprechen. Eine andere
+Modbus-Integration für diesen Speicher vorher entfernen (D-022). Die Anbindung lässt sich nicht
+umschalten: Eintrag löschen und neu anlegen, sonst bekommen die Entitäten neue IDs.
 
 ## Grundsatz
 
