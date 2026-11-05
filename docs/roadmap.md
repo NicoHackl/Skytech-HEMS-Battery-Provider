@@ -92,7 +92,7 @@ Hardware-Verifikation macht der User selbst an der echten Anlage.
 
 | Thema | Warum zurückgestellt | Bedingung für Wiederaufnahme |
 |---|---|---|
-| Weitere Hersteller/Protokolle (Modbus TCP, HTTP/REST, MQTT) | Marstek UDP und E3DC RSCP (D-015, 23.09.2026) decken den aktuellen Bedarf | Konkreter Bedarf für einen weiteren Hersteller/Speicher |
+| Weitere Hersteller/Protokolle (HTTP/REST, MQTT) | Marstek UDP und Modbus (D-022), E3DC RSCP (D-015) decken den aktuellen Bedarf | Konkreter Bedarf für einen weiteren Hersteller/Speicher |
 | Geräte-Discovery per UDP-Broadcast (`Marstek.GetDevice`) im Config-Flow | Komfortfeature (plan.md Abschnitt 5) — manuelle IP-Eingabe im Config-Flow funktioniert bereits | Konkretes Nutzerfeedback, dass manuelle IP-Eingabe stört |
 
 ---

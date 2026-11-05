@@ -29,6 +29,7 @@ CONF_HEMS_TIMEOUT_FACTOR: Final = "hems_timeout_factor"
 # Adapter braucht hier nur einen neuen Eintrag, keine Umstellung des Config-Flows.
 MANUFACTURER_MARSTEK: Final = "marstek"
 PROTOCOL_MARSTEK_UDP: Final = "marstek_udp"
+PROTOCOL_MARSTEK_MODBUS: Final = "marstek_modbus"
 MANUFACTURER_E3DC: Final = "e3dc"
 PROTOCOL_E3DC_RSCP: Final = "e3dc_rscp"
 
@@ -39,12 +40,22 @@ MANUFACTURER_NAMES: Final[dict[str, str]] = {
     MANUFACTURER_E3DC: "E3DC",
 }
 
+# Auswahl im ersten Config-Flow-Schritt: je Eintrag ein Speicher mit seiner Anbindung (D-022). Der
+# Hersteller bleibt in `entry.data` getrennt vom Protokoll; hier steht nur, was angezeigt wird.
+CHOICE_MARSTEK_MODBUS: Final = "marstek_modbus"
+ADAPTER_CHOICES: Final[dict[str, str]] = {
+    MANUFACTURER_MARSTEK: "Marstek (UDP)",
+    CHOICE_MARSTEK_MODBUS: "Marstek (Modbus)",
+    MANUFACTURER_E3DC: "E3DC",
+}
+
 # E3DC-RSCP-Zugang (D-015): RSCP-Schlüssel, wie er am Hauskraftwerk selbst hinterlegt ist.
 # Benutzername/Passwort nutzen die HA-Konstanten CONF_USERNAME/CONF_PASSWORD.
 CONF_RSCP_KEY: Final = "rscp_key"
 E3DC_RSCP_DEFAULT_PORT: Final = 5033
 
 MARSTEK_UDP_DEFAULT_PORT: Final = 30000
+MARSTEK_MODBUS_DEFAULT_PORT: Final = 502
 # Marstek erlaubt laut App eine Portänderung im Bereich 49152–65535.
 MARSTEK_UDP_PORT_RANGE: Final = (1, 65535)
 

@@ -341,6 +341,26 @@ dem zeitlichen Zusammenhang. Die Cloud war per App über Mobilfunk erreichbar, d
 Community-Analyse beschriebene Netzwerkchip-Reset ist damit unwahrscheinlicher, aber nicht
 ausgeschlossen.
 
+## Marstek über Modbus: noch nicht an Hardware abgenommen (05.11.2026)
+
+Der Adapter ist nur gegen ein simuliertes Gerät getestet ([ADR D-022](adr/D-022-marstek-modbus.md)).
+
+| Offen | Prüfung |
+|---|---|
+| Bleibt der Schreibfehler aus dem HA-Skript weg, und wird der Sollwert nach einem Chip-Reset schnell erneuert? | Nach der Umstellung über mehrere 35-min-Zyklen das Log und den Shelly beobachten |
+| Vorzeichen beim Laden: Entladen ist an der Anlage belegt (30006 = 547 W, Shelly -557 W), Laden nur aus Statistikwerten | Beim ersten Laden gegen den Shelly prüfen |
+| Bleibt 42010 im Betrieb auf dem geschriebenen Wert, auch bei vollem oder leerem Speicher? Weicht er dauerhaft ab, schreibt der Adapter rund alle 10 s erneut | Log auf „meldet Modus“ prüfen |
+
+**Bekannte Grenze:** Über Modbus läuft ein Sollwert nicht von selbst ab. Gemessen: 100 W über mindestens
+200 s ohne Schreibbefehl. Fällt HA ohne geordnetes Beenden aus, oder ist die HEMS-Anbindung pausiert,
+hält das Gerät den letzten Sollwert, bis ein neuer kommt oder die Abschaltgrenzen des Geräts greifen.
+Ob das Gerät nach langer Zeit doch stoppt, ist nicht getestet.
+
+**Bekannte Grenze:** Rund alle 35 min trennt das Gerät die Verbindung für rund 20 s, wohl durch den
+Netzwerkchip-Reset. Der Adapter verkürzt nur die Folgen. Der Cloud-Status des Geräts stand dabei auf
+aus, die App war trotzdem über Mobilfunk erreichbar. Ob ein ausbleibender Telemetrie-Upload die
+Ursache ist, ist nicht belegt.
+
 ## Stolpersteine
 
 Dinge, die schon einmal Zeit gekostet haben:
@@ -428,7 +448,7 @@ mit Wiedereinschalt-Hysterese. Seit D-017 liest die Integration deshalb die Ger�
 
 | Thema | Warum nicht | Verweis |
 |---|---|---|
-| Weitere Hersteller/Protokolle (Modbus TCP, HTTP/REST, MQTT) | Kein aktueller Bedarf, Marstek UDP und E3DC RSCP decken ihn | D-006, D-015, [roadmap.md](roadmap.md) |
+| Weitere Hersteller/Protokolle (HTTP/REST, MQTT) | Kein aktueller Bedarf, Marstek UDP und Modbus sowie E3DC RSCP decken ihn | D-006, D-015, D-022, [roadmap.md](roadmap.md) |
 
 ---
 

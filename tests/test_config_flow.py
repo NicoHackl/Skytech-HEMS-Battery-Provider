@@ -12,8 +12,10 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.battery_bridge.adapters.base import StorageAdapterError
+from custom_components.battery_bridge.adapters.marstek_modbus import MarstekModbusAdapter
 from custom_components.battery_bridge.adapters.marstek_udp import MarstekUdpAdapter
 from custom_components.battery_bridge.const import (
+    CHOICE_MARSTEK_MODBUS,
     CONF_DISPLAY_NAME,
     CONF_HEMS_ENTITY_PREFIX,
     CONF_MANUFACTURER,
@@ -22,6 +24,8 @@ from custom_components.battery_bridge.const import (
     DEFAULT_UPDATE_INTERVAL_SECONDS,
     DOMAIN,
     MANUFACTURER_MARSTEK,
+    MARSTEK_MODBUS_DEFAULT_PORT,
+    PROTOCOL_MARSTEK_MODBUS,
     PROTOCOL_MARSTEK_UDP,
 )
 
@@ -203,3 +207,74 @@ async def test_bereits_eingerichteter_speicher_bricht_ab(
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def _start_modbus_step(hass: HomeAssistant) -> dict:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_MANUFACTURER: CHOICE_MARSTEK_MODBUS}
+    )
+
+
+async def test_auswahl_zeigt_beide_marstek_anbindungen(hass: HomeAssistant) -> None:
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    selector = result["data_schema"].schema[CONF_MANUFACTURER]
+    labels = [option["label"] for option in selector.config["options"]]
+
+    assert labels == ["Marstek (UDP)", "Marstek (Modbus)", "E3DC"]
+
+
+async def test_modbus_flow_legt_entry_mit_eigenem_protokoll_an(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(MarstekModbusAdapter, "connect", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekModbusAdapter, "read", AsyncMock(return_value=None))
+    monkeypatch.setattr(MarstekModbusAdapter, "close", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "custom_components.battery_bridge.async_setup_entry", AsyncMock(return_value=True)
+    )
+
+    step = await _start_modbus_step(hass)
+    assert step["step_id"] == "marstek_modbus"
+
+    result = await hass.config_entries.flow.async_configure(
+        step["flow_id"],
+        {
+            CONF_DISPLAY_NAME: "AC Speicher 1",
+            CONF_HOST: "192.168.1.42",
+            CONF_PORT: MARSTEK_MODBUS_DEFAULT_PORT,
+            CONF_HEMS_ENTITY_PREFIX: "acspeicher1",
+        },
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"] == {
+        CONF_MANUFACTURER: MANUFACTURER_MARSTEK,
+        CONF_PROTOCOL: PROTOCOL_MARSTEK_MODBUS,
+        CONF_HOST: "192.168.1.42",
+        CONF_PORT: 502,
+        CONF_HEMS_ENTITY_PREFIX: "acspeicher1",
+    }
+
+
+async def test_modbus_flow_meldet_nicht_erreichbares_geraet(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        MarstekModbusAdapter,
+        "connect",
+        AsyncMock(side_effect=StorageAdapterError("nicht erreichbar")),
+    )
+    monkeypatch.setattr(MarstekModbusAdapter, "close", AsyncMock(return_value=None))
+
+    step = await _start_modbus_step(hass)
+    result = await hass.config_entries.flow.async_configure(
+        step["flow_id"], {CONF_HOST: "192.168.1.42", CONF_PORT: 502}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
