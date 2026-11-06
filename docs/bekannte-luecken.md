@@ -33,7 +33,7 @@ Modus zurück, wenn kein neuer Sollwert kommt? **Ja** — per HA-Verlauf live be
 ## Marstek-Protokoll — Quellenlage
 
 Offizielle Quelle ist seit 06.11.2026 die „Marstek Device Local API“, Rev 3.1.2 (erstellt am
-28.10.2026). Sie beschreibt nur UDP und bestätigt die Methoden und Felder unten. Sie sagt nichts zu
+28.10.2026, [PDF](MarstekDeviceOpenApi.pdf)). Sie beschreibt nur UDP und bestätigt die Methoden und Felder unten. Sie sagt nichts zu
 Modbus, Abfragetakt, Timeouts, Cloud-Upload oder Netzwerk-Resets und erklärt damit weder die
 V150-Aussetzer noch den Abbruch alle 35 min.
 
