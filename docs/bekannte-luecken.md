@@ -32,9 +32,28 @@ Modus zurück, wenn kein neuer Sollwert kommt? **Ja** — per HA-Verlauf live be
 
 ## Marstek-Protokoll — Quellenlage
 
-Marstek veröffentlicht die Local API nicht offiziell. Verwendet werden `Bat.GetStatus` (Feld
-`soc`), `ES.GetStatus` (Felder `bat_soc`, `bat_power`) und `ES.SetMode` (Passive-Mode,
-`passive_cfg: {power, cd_time}`) — zusammengetragen aus vier unabhängigen Community-Quellen:
+Offizielle Quelle ist seit 06.11.2026 die „Marstek Device Local API“, Rev 3.1.2 (erstellt am
+28.10.2026). Sie beschreibt nur UDP und bestätigt die Methoden und Felder unten. Sie sagt nichts zu
+Modbus, Abfragetakt, Timeouts, Cloud-Upload oder Netzwerk-Resets und erklärt damit weder die
+V150-Aussetzer noch den Abbruch alle 35 min.
+
+Weiterhin nur durch Community-Quellen oder eigene Messung belegt: das Vorzeichen von `power` und
+`bat_power`, das Verhalten nach Ablauf von `cd_time`, das Vorzeichen von `ongrid_power` und die
+16-Bit-Grenze der Request-ID (D-020). `bat_power` steht in der Feldtabelle, fehlt aber im Beispiel
+der Anleitung.
+
+Weitere Aussagen der Anleitung:
+
+- Der Block `SYS` (`DOD.SET`, `Ble.Adv`, `Led.Ctrl`, `Set.Ver`, `Reset.Factory`) gilt erst ab
+  Firmware 150. Das zeigt eine API-Änderung mit V150, sagt aber nichts über die Ursache der Aussetzer.
+  Der Provider nutzt diese Befehle nicht.
+- Eine aktive Local API kann eingebaute Funktionen abschalten, um Konflikte zu vermeiden. Welche,
+  nennt die Anleitung nicht. Ob das mit den Aussetzern zusammenhängt, ist nicht geprüft.
+- `ES.GetMode` meldet den aktiven Modus. Der UDP-Adapter nutzt das bisher nicht.
+
+Verwendet werden `Bat.GetStatus` (Feld `soc`), `ES.GetStatus` (Felder `bat_soc`, `bat_power`) und
+`ES.SetMode` (Passive-Mode, `passive_cfg: {power, cd_time}`) — vor der Rev 3.1.2 zusammengetragen aus
+vier unabhängigen Community-Quellen:
 [Randyocean/Marstek](https://github.com/Randyocean/Marstek/blob/main/docs/marstek_device_openapi.MD)
 (Protokoll-Dump), [taurgis/has-marstek-local-api](https://github.com/taurgis/has-marstek-local-api),
 [jaapp/ha-marstek-local-api](https://github.com/jaapp/ha-marstek-local-api) und
@@ -431,8 +450,8 @@ mit Wiedereinschalt-Hysterese. Seit D-017 liest die Integration deshalb die Ger�
 | Frage | Betrifft | Blockiert |
 |---|---|---|
 | ~~Geht `Bat.GetStatus.dischrg_flag` im Band 12–16 % nach einem Wiederaufladen tatsächlich auf `false`?~~ **Beantwortet 19.10.2026: nein.** Bei 12 % SoC und bewusst auf 11 % gesenktem HEMS-`soc_min` verweigerte der Speicher von 06:40 bis 06:50, 07:37 bis 07:38 und 07:49 bis 07:50 jede Entladung (bis 1228 W angefordert, Ist 0 W); `entladen_freigegeben` blieb `true`. Seit D-018 erkennt der Adapter das über einen Soll/Ist-Vergleich | `adapters/marstek_udp.py` | – |
-| Passen die Defaults des Soll/Ist-Vergleichs (30 s, 100 W, 20 W) und die Freigabe bei 1 % SoC zur tatsächlichen Hysterese des Geräts? Beobachtet: Sperre ab 12 %, Entladen wieder ab etwa 15–17 % — die Freigabe bei +1 % führt dazwischen zu wiederholten Fehlversuchen von je höchstens 30 s | `adapters/marstek_udp.py: _ResponseCheck` | – |
-| Liefert das Gerät die Flags als JSON-Boolean? Andere Typen werden bewusst nicht gedeutet (Freigabe bleibt `None`); die Rohantwort steht im Debug-Log | `adapters/marstek_udp.py: _as_bool()` | – |
+| Passen die Defaults des Soll/Ist-Vergleichs (30 s, 100 W, 20 W) und die Freigabe bei 1 % SoC zur tatsächlichen Hysterese des Geräts? Beobachtet: Sperre ab 12 %, Entladen wieder ab etwa 15–17 % — die Freigabe bei +1 % führt dazwischen zu wiederholten Fehlversuchen von je höchstens 30 s. Die 12 % passen rechnerisch zum Standardwert DOD 88 (einstellbar 30–88, Rev 3.1.2), ausdrücklich nennt die Anleitung den Zusammenhang nicht; die Wiederfreigabe erklärt sie nicht | `adapters/marstek_udp.py: _ResponseCheck` | – |
+| Liefert das Gerät die Flags als JSON-Boolean? Laut Rev 3.1.2 ja, an der Anlage noch nicht gesondert bestätigt. Andere Typen werden bewusst nicht gedeutet (Freigabe bleibt `None`); die Rohantwort steht im Debug-Log | `adapters/marstek_udp.py: _as_bool()` | – |
 | Entspricht die RSCP-Belegung von `EMS_STATUS` der Modbus-Doku (Bit 0/1 Laden/Entladen gesperrt, Bit 5/6 Sperrzeiten)? Abgleich: Attribut `geraet_status_roh` gegen `sensor.e3dc_ems_status_modbus` (am 18.10.2026 dort 132) | `adapters/e3dc_rscp.py: _read_device_status()` | Auswertung der Freigabe im HEMS für E3DC |
 | Setzt ein HEMS-Leerlaufbefehl (Betriebsart 1) beim E3DC selbst eine Sperre? In 7 Tagen Modbus-Verlauf kamen Bit 0/1 nie vor, eine Selbstblockade ist also nicht zu erwarten | E3DC-Verhalten | – |
 
